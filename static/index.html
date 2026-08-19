@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Local RAG</title>
+  <link rel="stylesheet" href="/static/styles.css?v=5" />
+</head>
+<body>
+  <div class="app">
+    <aside class="rail">
+      <div class="brand">
+        <strong>Local RAG</strong>
+        <span>Muhammed Beşir Kesen</span>
+      </div>
+
+      <label class="upload">
+        Belge yükle
+        <input id="fileInput" type="file" accept=".pdf,.txt" multiple />
+      </label>
+      <ul id="fileList" class="files"></ul>
+      <p id="emptyFiles" class="muted">Henüz belge yok.</p>
+    </aside>
+
+    <main class="chat">
+      <div id="thread" class="thread"></div>
+      <form id="composer" class="composer">
+        <input id="query" type="text" placeholder="Belgen hakkında sor…" autocomplete="off" />
+        <button type="submit" id="sendBtn">Gönder</button>
+      </form>
+    </main>
+  </div>
+  <script src="/static/app.js?v=6"></script>
+</body>
+</html>
