@@ -1,0 +1,23 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Local environment & Data
+.venv/
+venv/
+ENV/
+env/
+.env
+.env.*
+data/*.db
+data/*.txt
+data/*.pdf
+
+# Secret notes & Video presentation script (Ignored from GitHub)
+notes/
+video_script.md
+
+*.mp4
+.streamlit/
+

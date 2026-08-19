@@ -1,0 +1,7 @@
+foundry-local-sdk
+fastapi
+uvicorn
+python-multipart
+pypdf
+pdfplumber
+numpy
