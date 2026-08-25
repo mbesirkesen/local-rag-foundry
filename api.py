@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from src.database import (
     chunk_count,
     clear_db,
+    delete_source,
     init_db,
     list_documents,
     list_source_files,
@@ -22,6 +23,7 @@ from src.database import (
 )
 from src.ingest import process_document
 from src.llm import LLMEngine
+from src.memory import expand_query, infer_source
 from src.retriever import retrieve_smart_chunks
 from src.verifier import verify_citations
 
@@ -110,9 +112,15 @@ def knowledge_rows() -> List[Dict[str, Any]]:
     return rows
 
 
+class ChatTurn(BaseModel):
+    role: str
+    content: str
+
+
 class ChatRequest(BaseModel):
     query: str
     source: Optional[str] = None
+    history: List[ChatTurn] = Field(default_factory=list)
     top_k: int = Field(default=5, ge=1, le=10)
     temperature: float = Field(default=0.1, ge=0, le=1)
 
@@ -217,6 +225,7 @@ async def upload(files: List[UploadFile] = File(...)):
         for chunk in chunks:
             chunk["embedding"] = engine.generate_embedding(chunk["content"])
         if chunks:
+            delete_source(name)
             save_chunks(chunks)
         saved.append({"name": name, "chunks": len(chunks)})
 
@@ -240,16 +249,22 @@ def chat(payload: ChatRequest):
         raise HTTPException(status_code=400, detail="Soru boş.")
 
     engine = get_engine()
+    history = [
+        {"role": turn.role, "content": turn.content}
+        for turn in (payload.history or [])
+    ][-8:]
+    search_query = expand_query(query, history)
     source = payload.source or None
-    # Saklanan vektörler hash; Foundry chat modeli embedding için kullanılmaz.
-    answer_chunks = retrieve_for(engine, query, source, payload.top_k, "fallback")
+    if source in {None, "", "Tüm Belgeler"}:
+        source = infer_source(query, list_source_files(), history)
+    answer_chunks = retrieve_for(engine, search_query, source, payload.top_k, "fallback")
     engine_used = "foundry" if engine.is_foundry_active else "fallback"
     usable = [c for c in answer_chunks if c.get("is_relevant") or (c.get("similarity_score") or 0) > 0.2]
     if not usable:
         usable = answer_chunks[: payload.top_k]
 
     response_text = engine.generate_answer(
-        query,
+        search_query,
         usable,
         temperature=payload.temperature,
     )

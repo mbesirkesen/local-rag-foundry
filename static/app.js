@@ -1,5 +1,5 @@
 const $ = (id) => document.getElementById(id);
-const state = { files: [] };
+const state = { files: [], history: [] };
 
 async function api(path, options = {}) {
   const res = await fetch(path, options);
@@ -24,6 +24,12 @@ function renderFiles() {
     })
     .join("");
   $("emptyFiles").hidden = state.files.length > 0;
+  const select = $("sourceSelect");
+  const current = select.value;
+  select.innerHTML = `<option value="">Tüm belgeler</option>` + state.files
+    .map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
+    .join("");
+  if ([...select.options].some((opt) => opt.value === current)) select.value = current;
 }
 
 function renderEmpty() {
@@ -94,9 +100,16 @@ async function chat(query) {
     const data = await api("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query }),
+      body: JSON.stringify({
+        query,
+        source: $("sourceSelect").value || null,
+        history: state.history.slice(-8),
+      }),
     });
-    pending.querySelector(".body").innerHTML = formatAnswer(data.answer);
+    const answer = data.answer || "";
+    pending.querySelector(".body").innerHTML = formatAnswer(answer);
+    state.history.push({ role: "user", content: query });
+    state.history.push({ role: "assistant", content: answer });
   } catch (err) {
     pending.querySelector(".body").textContent = err.message;
   } finally {

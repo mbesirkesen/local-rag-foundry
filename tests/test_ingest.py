@@ -24,6 +24,17 @@ def run_tests():
     assert overlap_words == second_chunk_words[:10], "Overlap (Çakışma) mekanizması hatalı!"
     print("[OK] Chunking & Overlap Logic Test Passed")
 
+    # 1b. Semantic chunking keeps sentence boundaries
+    from src.ingest import semantic_chunk_text
+    long_text = " ".join(
+        f"Thomas Hopkins Gallaudet went to France in year {i}." for i in range(1, 40)
+    )
+    semantic = semantic_chunk_text(long_text, target_words=80, max_words=140, min_words=40)
+    assert len(semantic) > 1, "Uzun metin semantik olarak bölünmeliydi!"
+    for piece in semantic:
+        assert piece.strip().endswith("."), f"Cümle ortasından kesildi: {piece[-40:]}"
+    print("[OK] Semantic Sentence Boundary Test Passed")
+
     # 2. Document Processing & Metadata Testi
     test_txt_path = os.path.join(os.path.dirname(__file__), "test_doc.txt")
     with open(test_txt_path, "w", encoding="utf-8") as f:

@@ -64,6 +64,19 @@ button, input { font: inherit; }
 }
 .muted { margin: 0; color: var(--muted); font-size: 13px; }
 
+.source-label {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.source-select {
+  width: 100%;
+  border: 1px solid var(--line);
+  padding: 8px;
+  background: var(--bg);
+  color: var(--text);
+}
+
 .chat {
   display: grid;
   grid-template-rows: 1fr auto;

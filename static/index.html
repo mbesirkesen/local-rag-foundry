@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Local RAG</title>
-  <link rel="stylesheet" href="/static/styles.css?v=8" />
+  <link rel="stylesheet" href="/static/styles.css?v=9" />
 </head>
 <body>
   <div class="app">
@@ -18,6 +18,10 @@
         Belge yükle
         <input id="fileInput" type="file" accept=".pdf,.txt" multiple />
       </label>
+      <label class="source-label" for="sourceSelect">Belge</label>
+      <select id="sourceSelect" class="source-select">
+        <option value="">Tüm belgeler</option>
+      </select>
       <ul id="fileList" class="files"></ul>
       <p id="emptyFiles" class="muted">Henüz belge yok.</p>
     </aside>
@@ -30,6 +34,6 @@
       </form>
     </main>
   </div>
-  <script src="/static/app.js?v=8"></script>
+  <script src="/static/app.js?v=9"></script>
 </body>
 </html>
