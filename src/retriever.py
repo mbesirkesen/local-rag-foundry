@@ -113,6 +113,24 @@ def employment_query(query_text: str) -> bool:
     return any(k in qn for k in EMPLOYMENT_HINTS)
 
 
+def minnesota_labor_query(query_text: str) -> bool:
+    qn = normalize_text(query_text)
+    if "minnesota" not in qn:
+        return False
+    return any(
+        k in qn
+        for k in (
+            "isci", "labor", "bureau", "buro", "istihdam", "meslek",
+            "occupation", "wage", "kazanc", "division", "bolum",
+            "istatistik", "employed", "employment",
+        )
+    )
+
+
+def national_employment_query(query_text: str) -> bool:
+    return employment_query(query_text) and not minnesota_labor_query(query_text)
+
+
 def europe_query(query_text: str) -> bool:
     qn = normalize_text(query_text)
     if any(k in qn for k in ("avrupa", "europe", "ingiltere", "fransa", "seyahat")):
@@ -217,6 +235,85 @@ def fay_query(query_text: str) -> bool:
     return bool(re.search(r"\bfay\b", qn)) and any(
         k in qn for k in ("evlilik", "marriage", "cocuk", "istatistik", "arastirma")
     )
+
+
+KNOWN_CORPUS_NAMES = {
+    "gallaudet", "eliza", "gartner", "weizenbaum", "fay", "juniper",
+    "minnesota", "hartford", "alice", "chan", "croes", "kent",
+    "braidwood", "watson", "thormundsson", "xiaoice", "parry",
+    "wallace", "ikea", "anna", "harry", "loebner", "aiml", "turing",
+    "chong", "microsoft", "ibm", "siri", "alexa", "cortana",
+}
+
+GENERIC_NAME_TOKENS = {
+    "chat", "bot", "chatbot", "chatbots", "test", "demo", "app", "pdf",
+    "proje", "project", "research", "journal", "business", "studies",
+    "amerika", "turkiye", "united", "states", "bureau", "labor",
+    "makale", "belge", "sayfa",
+}
+
+
+def distinctive_query_names(query_text: str) -> List[str]:
+    """Sorgudaki ayırt edici özel isim / proje adlarını (orijinal yazım) döndürür."""
+    text = query_text or ""
+    found: List[str] = []
+    for raw in re.findall(
+        r"[A-ZÇĞİÖŞÜ][A-Za-zÇĞİÖŞÜçğıöşü]{1,}(?:-[A-ZÇĞİÖŞÜ0-9][A-Za-zÇĞİÖŞÜçğıöşü0-9]+)+",
+        text,
+    ):
+        found.append(raw)
+    for raw in re.findall(
+        r"\b([A-ZÇĞİÖŞÜ][a-zçğıöşü]+[A-ZÇĞİÖŞÜ][A-Za-zÇĞİÖŞÜçğıöşü]+)\b",
+        text,
+    ):
+        found.append(raw)
+    for raw in re.findall(
+        r"([A-ZÇĞİÖŞÜ][A-Za-zÇĞİÖŞÜçğıöşü0-9\-]{2,})\s+projes",
+        text,
+        flags=re.I,
+    ):
+        found.append(raw)
+    out: List[str] = []
+    seen = set()
+    for item in found:
+        key = normalize_text(item.replace("-", " "))
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    return out
+
+
+def unknown_proper_names(query_text: str) -> List[str]:
+    """Yüklenen belgelerde geçmeyen ayırt edici özel isimleri döndürür."""
+    from src.database import content_contains
+
+    missing: List[str] = []
+    for raw in distinctive_query_names(query_text):
+        spaced = normalize_text(raw.replace("-", " "))
+        compact = normalize_text(raw.replace("-", ""))
+        tokens = [
+            t
+            for t in spaced.split()
+            if len(t) >= 4
+            and t not in GENERIC_NAME_TOKENS
+            and t not in STOP_WORDS
+            and t not in WEAK_NAME_TOKENS
+        ]
+        if not tokens:
+            continue
+        if any(t in KNOWN_CORPUS_NAMES for t in tokens):
+            continue
+        found = False
+        for variant in (spaced, compact, *tokens):
+            if not variant or variant in GENERIC_NAME_TOKENS:
+                continue
+            if content_contains(variant):
+                found = True
+                break
+        if not found:
+            missing.append(raw)
+    return missing
 
 
 def is_junk_chunk(content: str, page_number: int = 0) -> bool:
@@ -392,10 +489,13 @@ def entity_boost(query_text: str, content: str) -> float:
         bonus += 2.8
     if alice_query(query_text) and "1995" in blob and "alice" in blob and "aiml" in blob:
         bonus += 3.0
-    if health_query(query_text) and any(
-        k in blob for k in ("anonimlik", "sanal terapi", "ruh sagligi", "psikiyatr")
-    ):
-        bonus += 3.0
+    if health_query(query_text):
+        if "anonimlik" in blob:
+            bonus += 3.2
+        elif "sanal terapi" in blob:
+            bonus += 2.4
+        elif any(k in blob for k in ("ruh sagligi", "psikiyatr")):
+            bonus += 0.6
     if legal_query(query_text) and any(
         k in blob for k in ("prima facie", "guardianship", "chancellor kent", "insane")
     ):
@@ -408,10 +508,15 @@ def entity_boost(query_text: str, content: str) -> float:
         bonus -= 3.0
     if any(k in qn for k in ("yas", "yuzde", "orani", "isitme")) and any(
         k in qn for k in ("sagir", "deaf", "harry", "isitme")
-    ) and not employment_query(query_text) and not census_count_query(query_text) and not cousin_query(query_text) and not census_rate_query(query_text):
+    ) and not national_employment_query(query_text) and not census_count_query(query_text) and not cousin_query(query_text) and not census_rate_query(query_text):
         if any(k in blob for k in ("twentieth", "90.6", "age when", "deafness occurred", "under five")):
             bonus += 2.4
-    if employment_query(query_text) and any(k in qn for k in ("sagir", "deaf", "harry")):
+    if minnesota_labor_query(query_text):
+        if "minnesota" in blob and "bureau of labor" in blob:
+            bonus += 3.4
+        elif "minnesota" in blob and "division for the deaf" in blob:
+            bonus += 2.8
+    elif national_employment_query(query_text) and any(k in qn for k in ("sagir", "deaf", "harry")):
         if any(k in blob for k in ("gainful", "gainfully employed", "50.1", "wage-earning")):
             bonus += 2.4
     qn_z = qn
@@ -557,7 +662,8 @@ def retrieve_smart_chunks(
         if (
             any(k in qn for k in ("yas", "yuzde", "orani"))
             and any(k in qn for k in DEAF_QUERY_HINTS)
-            and not employment_query(query_text)
+            and not national_employment_query(query_text)
+            and not minnesota_labor_query(query_text)
             and not cousin_query(query_text)
             and not census_rate_query(query_text)
             and ("90.6" in (content or "") or "twentieth year" in blob_n)
@@ -573,17 +679,21 @@ def retrieve_smart_chunks(
             score += 3.4
         if alice_query(query_text) and "aiml" in blob_n and "alice" in blob_n:
             score += 3.4
-        if health_query(query_text) and any(
-            k in blob_n for k in ("anonimlik", "sanal terapi", "ruh sagligi")
-        ):
-            score += 3.5
+        if health_query(query_text) and "anonimlik" in blob_n:
+            score += 3.8
+        elif health_query(query_text) and "sanal terapi" in blob_n:
+            score += 3.2
+        elif health_query(query_text) and any(k in blob_n for k in ("ruh sagligi", "psikiyatr")):
+            score += 1.0
         if legal_query(query_text) and "prima facie" in blob_n:
             score += 3.6
         if fay_query(query_text) and "marriages of the deaf" in blob_n:
             score += 3.6
         if census_count_query(query_text) and "1900" in qn and "37426" in blob_n.replace(" ", "").replace(",", ""):
             score += 3.6
-        if employment_query(query_text) and "gainful" in blob_n and "50.1" in (content or ""):
+        if minnesota_labor_query(query_text) and "minnesota" in blob_n and "bureau of labor" in blob_n:
+            score += 3.8
+        elif national_employment_query(query_text) and "gainful" in blob_n and "50.1" in (content or ""):
             score += 3.5
         if is_junk_chunk(content, page_number):
             score *= 0.02

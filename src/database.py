@@ -189,6 +189,22 @@ def list_documents(db_path: str = DB_PATH) -> List[Dict[str, Any]]:
     ]
 
 
+def content_contains(term: str, db_path: str = DB_PATH) -> bool:
+    """Metin parçasında (büyük/küçük harf duyarsız) geçen bir ifade var mı."""
+    needle = (term or "").strip()
+    if not needle or not os.path.exists(db_path):
+        return False
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT 1 FROM document_chunks WHERE INSTR(LOWER(content), LOWER(?)) > 0 LIMIT 1",
+        (needle,),
+    )
+    found = cursor.fetchone() is not None
+    conn.close()
+    return found
+
+
 def delete_source(source_file: str, db_path: str = DB_PATH) -> None:
     if not os.path.exists(db_path):
         return
