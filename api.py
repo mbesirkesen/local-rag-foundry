@@ -23,7 +23,7 @@ from src.database import (
 )
 from src.ingest import process_document
 from src.llm import LLMEngine
-from src.memory import expand_query, infer_source
+from src.memory import expand_query, infer_source, is_compare_query, is_presence_query, mentioned_source
 from src.retriever import retrieve_smart_chunks
 from src.verifier import verify_citations
 
@@ -254,27 +254,46 @@ def chat(payload: ChatRequest):
         for turn in (payload.history or [])
     ][-8:]
     search_query = expand_query(query, history)
+    files = list_source_files()
     source = payload.source or None
     if source in {None, "", "Tüm Belgeler"}:
-        source = infer_source(query, list_source_files(), history)
-    answer_chunks = retrieve_for(engine, search_query, source, payload.top_k, "fallback")
+        source = infer_source(query, files, history)
+    if is_compare_query(query):
+        merged = []
+        seen = set()
+        for fname in files:
+            for chunk in retrieve_for(engine, search_query, fname, min(3, payload.top_k), "fallback"):
+                cid = chunk.get("id")
+                if cid in seen:
+                    continue
+                seen.add(cid)
+                merged.append(chunk)
+        merged.sort(key=lambda item: float(item.get("similarity_score") or 0), reverse=True)
+        answer_chunks = merged[: max(payload.top_k * 2, 6)]
+    else:
+        answer_chunks = retrieve_for(engine, search_query, source, payload.top_k, "fallback")
     engine_used = "foundry" if engine.is_foundry_active else "fallback"
     usable = [c for c in answer_chunks if c.get("is_relevant") or (c.get("similarity_score") or 0) > 0.2]
     if not usable:
         usable = answer_chunks[: payload.top_k]
 
+    prompt_query = query if (
+        is_presence_query(query) or is_compare_query(query) or mentioned_source(query, files)
+    ) else search_query
     response_text = engine.generate_answer(
-        search_query,
+        prompt_query,
         usable,
         temperature=payload.temperature,
     )
-    cleaned = (
+    cleaned = engine._sanitize_model_text(
         response_text.replace("|||---|---|---|---|", "")
         .replace("|||", "")
         .replace("||", "")
     )
     verification = verify_citations(response_text, usable)
-    not_found = (not usable) or "bulunmamaktadır" in response_text.lower()
+    not_found = (not usable) or any(
+        k in cleaned.lower() for k in ("bulunmamaktadır", "geçmemektedir")
+    )
     return {
         "answer": cleaned,
         "not_found": not_found,

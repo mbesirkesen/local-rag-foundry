@@ -1,7 +1,7 @@
 import re
 from typing import Dict, List, Optional, Tuple
 
-from src.retriever import citation_names, normalize_text
+from src.retriever import citation_names, mixed_domain_query, normalize_text
 
 FOLLOWUP_HINTS = (
     "o zaman", "peki", "ya o", "onun", "bunun", "orada", "oradaki",
@@ -118,7 +118,7 @@ def looks_like_followup(query: str) -> bool:
 def infer_source(query: str, files: List[str], history: Optional[List[Dict[str, str]]] = None) -> Optional[str]:
     if not files:
         return None
-    if is_compare_query(query):
+    if is_compare_query(query) and not mixed_domain_query(query):
         return None
 
     explicit = mentioned_source(query, files)
