@@ -1,13 +1,15 @@
 import re
 from typing import Dict, List, Optional, Tuple
 
-from src.retriever import citation_names, mixed_domain_query, normalize_text
+from src.retriever import citation_names, distinctive_query_names, mixed_domain_query, normalize_text
 
-FOLLOWUP_HINTS = (
-    "o zaman", "peki", "ya o", "onun", "bunun", "orada", "oradaki",
-    "oraya", "oradan", "bu okul", "bu kisi", "bu kitap", "hangi sehir",
-    "hangi ulke", "hangi eyalet", "kimdi", "neresi", "daha fazla",
-    "peki ya", "hangisi", "nerede", "kimi",
+FOLLOWUP_PHRASES = (
+    "o zaman", "peki ya", "ya o", "bu okul", "bu kisi", "bu kitap",
+    "hangi sehir", "hangi ulke", "hangi eyalet", "daha fazla",
+)
+FOLLOWUP_WORDS = (
+    "onun", "bunun", "orada", "oradaki", "oraya", "oradan",
+    "kimdi", "neresi", "hangisi", "nerede", "kimi", "peki",
 )
 
 RELATED_TERMS = {
@@ -105,14 +107,35 @@ def cited_source(text: str) -> str:
     return match.group(1).strip()
 
 
-def looks_like_followup(query: str) -> bool:
+def looks_like_followup(query: str, history: Optional[List[Dict[str, str]]] = None) -> bool:
     qn = normalize_text(query or "")
     if not qn:
         return False
-    if any(hint in qn for hint in FOLLOWUP_HINTS):
+    if _has_new_topic_name(query, history):
+        return False
+    if any(hint in qn for hint in FOLLOWUP_PHRASES):
+        return True
+    if any(re.search(rf"\b{re.escape(word)}\b", qn) for word in FOLLOWUP_WORDS):
         return True
     words = qn.split()
-    return len(words) <= 6 and any(k in qn for k in ("kim", "hangi", "kac", "ne", "neden"))
+    return len(words) <= 4 and any(
+        re.search(rf"\b{w}\b", qn) for w in ("kim", "hangi", "kac", "ne", "neden", "kimdir")
+    )
+
+
+def _has_new_topic_name(query: str, history: Optional[List[Dict[str, str]]]) -> bool:
+    last_q, last_a = last_turn(history or [])
+    hist_blob = normalize_text(f"{last_q} {last_a}")
+    names = list(citation_names(query or ""))
+    for raw in distinctive_query_names(query or ""):
+        names.append(normalize_text(raw.replace("-", " ")))
+    for name in names:
+        if len(name) < 4:
+            continue
+        compact_hist = hist_blob.replace(" ", "")
+        if name not in hist_blob and name.replace(" ", "") not in compact_hist:
+            return True
+    return False
 
 
 def infer_source(query: str, files: List[str], history: Optional[List[Dict[str, str]]] = None) -> Optional[str]:
@@ -162,7 +185,7 @@ def infer_source(query: str, files: List[str], history: Optional[List[Dict[str, 
     if any(k in qn for k in ("chatbot",)):
         return article
 
-    if looks_like_followup(query):
+    if looks_like_followup(query, history):
         _, last_answer = last_turn(history or [])
         source = cited_source(last_answer)
         if source in files:
@@ -180,7 +203,7 @@ def expand_query(
     last_q, last_a = last_turn(history)
     if not last_q and not last_a:
         return query
-    if not looks_like_followup(query):
+    if not looks_like_followup(query, history):
         return query
 
     body = re.split(r"\(Kaynak:", last_a or "", maxsplit=1)[0].strip()

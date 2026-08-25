@@ -23,7 +23,7 @@ from src.database import (
 )
 from src.ingest import process_document
 from src.llm import LLMEngine
-from src.memory import expand_query, infer_source, is_compare_query, is_presence_query, mentioned_source
+from src.memory import expand_query, infer_source, is_compare_query, is_presence_query, looks_like_followup, mentioned_source
 from src.retriever import retrieve_smart_chunks
 from src.verifier import verify_citations
 
@@ -278,12 +278,16 @@ def chat(payload: ChatRequest):
         usable = answer_chunks[: payload.top_k]
 
     prompt_query = query if (
-        is_presence_query(query) or is_compare_query(query) or mentioned_source(query, files)
+        is_presence_query(query)
+        or is_compare_query(query)
+        or mentioned_source(query, files)
+        or not looks_like_followup(query, history)
     ) else search_query
     response_text = engine.generate_answer(
         prompt_query,
         usable,
         temperature=payload.temperature,
+        original_query=query,
     )
     cleaned = engine._sanitize_model_text(
         response_text.replace("|||---|---|---|---|", "")

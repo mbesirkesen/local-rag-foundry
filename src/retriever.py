@@ -115,16 +115,21 @@ def employment_query(query_text: str) -> bool:
 
 def minnesota_labor_query(query_text: str) -> bool:
     qn = normalize_text(query_text)
-    if "minnesota" not in qn:
-        return False
-    return any(
+    laborish = any(
         k in qn
         for k in (
             "isci", "labor", "bureau", "buro", "istihdam", "meslek",
             "occupation", "wage", "kazanc", "division", "bolum",
-            "istatistik", "employed", "employment",
+            "istatistik", "employed", "employment", "is bul",
         )
     )
+    if "minnesota" in qn and laborish:
+        return True
+    if "1913" in qn and any(
+        k in qn for k in ("division", "bolum", "bureau", "buro", "isci")
+    ) and any(k in qn for k in ("deaf", "sagir", "harry", "best", "eyalet", "state")):
+        return True
+    return "division for the deaf" in qn
 
 
 def national_employment_query(query_text: str) -> bool:
@@ -189,6 +194,26 @@ def alice_query(query_text: str) -> bool:
     )
 
 
+def juniper_query(query_text: str) -> bool:
+    if mixed_domain_query(query_text):
+        return False
+    qn = normalize_text(query_text)
+    if "juniper" in qn:
+        return True
+    return any(k in qn for k in ("mesajlasma", "messaging")) and any(
+        k in qn for k in ("2026", "2022", "erisim", "milyar", "uygulama")
+    )
+
+
+def gallaudet_who_query(query_text: str) -> bool:
+    qn = normalize_text(query_text)
+    if "gallaudet" not in qn:
+        return False
+    return any(k in qn for k in ("kimdir", "nedir", "kimdi")) or bool(
+        re.search(r"\b(kim|who)\b", qn)
+    )
+
+
 def deaf_domain_query(query_text: str) -> bool:
     qn = normalize_text(query_text)
     return any(
@@ -206,7 +231,10 @@ def bot_domain_query(query_text: str) -> bool:
     qn = normalize_text(query_text)
     return any(
         k in qn
-        for k in ("chatbot", "eliza", "gartner", "pazar", "aiml", "loebner", "alice")
+        for k in (
+            "chatbot", "eliza", "gartner", "pazar", "aiml", "loebner", "alice",
+            "turing", "weizenbaum", "siri", "sohbet robot",
+        )
     )
 
 

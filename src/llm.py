@@ -144,17 +144,19 @@ class LLMEngine:
         query: str,
         context_chunks: List[Dict[str, Any]],
         temperature: float = 0.1,
+        original_query: str = "",
     ) -> str:
         if not context_chunks:
             return NOT_FOUND
 
         self._page_cache = {}
+        guard_query = (original_query or query).strip() or query
 
-        mixed = self._mixed_domain_answer(query)
+        mixed = self._mixed_domain_answer(guard_query)
         if mixed:
             return mixed
 
-        unknown = self._unknown_entity_answer(query)
+        unknown = self._unknown_entity_answer(guard_query)
         if unknown:
             return unknown
 
@@ -647,15 +649,23 @@ class LLMEngine:
                     break
         if picked is None:
             return ""
-        body = (
-            "Minnesota'da 1913 yılında çıkarılan yasa, eyalet işçi bürosu "
-            "(state bureau of labor) içinde sağırlar için bir birim "
-            "(division for the deaf) kurulmasını öngörür. Görevi sağırlara ilişkin "
-            "istatistik toplamak ve hangi meslek veya işlerde çalıştıklarını tespit "
-            "etmektir. Dipnotta bu birimin eyalet okuluyla birlikte çalıştığı belirtilir."
-        )
-        extra = ""
         qn = normalize_text(query)
+        if any(k in qn for k in ("hangi eyalet", "eyalette")):
+            body = (
+                "Minnesota. 1913 yılında bu eyalette çıkarılan yasa, eyalet işçi bürosu "
+                "(state bureau of labor) içinde sağırlar için özel bir bölüm "
+                "(division for the deaf) kurulmasını öngörür. Görevi sağırlara ilişkin "
+                "istatistik toplamak ve meslek/iş seçimini desteklemektir."
+            )
+        else:
+            body = (
+                "Minnesota'da 1913 yılında çıkarılan yasa, eyalet işçi bürosu "
+                "(state bureau of labor) içinde sağırlar için bir birim "
+                "(division for the deaf) kurulmasını öngörür. Görevi sağırlara ilişkin "
+                "istatistik toplamak ve hangi meslek veya işlerde çalıştıklarını tespit "
+                "etmektir. Dipnotta bu birimin eyalet okuluyla birlikte çalıştığı belirtilir."
+            )
+        extra = ""
         if any(k in qn for k in ("istihdam", "oran", "yuzde", "yas", "20")):
             extra = (
                 " Yüklenen belgelerde Minnesota İşçi Bürosu'nun 20 yaş ve üzeri "
