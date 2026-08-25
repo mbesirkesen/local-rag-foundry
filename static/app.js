@@ -8,13 +8,43 @@ async function api(path, options = {}) {
   return data;
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
 function renderFiles() {
-  $("fileList").innerHTML = state.files.map((name) => `<li>${name}</li>`).join("");
+  $("fileList").innerHTML = state.files
+    .map((name) => {
+      const href = `/api/files/${encodeURIComponent(name)}`;
+      return `<li><a href="${href}" target="_blank" rel="noopener" title="Belgeyi aç">${escapeHtml(name)}</a></li>`;
+    })
+    .join("");
   $("emptyFiles").hidden = state.files.length > 0;
 }
 
 function renderEmpty() {
   $("thread").innerHTML = `<div class="empty">Önce bir PDF veya TXT yükle, sonra sor.</div>`;
+}
+
+function formatAnswer(text) {
+  const re = /\(Kaynak:\s*([^,\n]+),\s*Sayfa\s*(\d+)\)/g;
+  let html = "";
+  let last = 0;
+  let match;
+  while ((match = re.exec(text))) {
+    html += escapeHtml(text.slice(last, match.index));
+    const file = match[1].trim();
+    const page = match[2];
+    const href = `/api/files/${encodeURIComponent(file)}#page=${page}`;
+    html += `(Kaynak: <a href="${href}" target="_blank" rel="noopener">${escapeHtml(file)}, Sayfa ${page}</a>)`;
+    last = match.index + match[0].length;
+  }
+  html += escapeHtml(text.slice(last));
+  return html;
 }
 
 function addMessage(role, text) {
@@ -23,7 +53,9 @@ function addMessage(role, text) {
   const el = document.createElement("article");
   el.className = `msg ${role}`;
   el.innerHTML = `<div class="who">${role === "user" ? "Sen" : "Asistan"}</div><div class="body"></div>`;
-  el.querySelector(".body").textContent = text;
+  const body = el.querySelector(".body");
+  if (role === "assistant") body.innerHTML = formatAnswer(text);
+  else body.textContent = text;
   $("thread").appendChild(el);
   $("thread").scrollTop = $("thread").scrollHeight;
   return el;
@@ -64,7 +96,7 @@ async function chat(query) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query }),
     });
-    pending.querySelector(".body").textContent = data.answer;
+    pending.querySelector(".body").innerHTML = formatAnswer(data.answer);
   } catch (err) {
     pending.querySelector(".body").textContent = err.message;
   } finally {

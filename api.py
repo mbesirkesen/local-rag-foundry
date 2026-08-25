@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from urllib.parse import unquote
 from pydantic import BaseModel, Field
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -65,6 +66,22 @@ def public_chunk(chunk: Dict[str, Any]) -> Dict[str, Any]:
         "content": content,
         "snippet": content[:280],
     }
+
+
+def resolve_data_file(filename: str) -> str:
+    name = os.path.basename(unquote(filename or ""))
+    if not name or name in {".", ".."}:
+        raise HTTPException(status_code=400, detail="Geçersiz dosya adı.")
+    path = os.path.abspath(os.path.join(DATA_DIR, name))
+    root = os.path.abspath(DATA_DIR)
+    try:
+        if os.path.commonpath([root, path]) != root:
+            raise HTTPException(status_code=400, detail="Geçersiz yol.")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Geçersiz yol.")
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="Dosya bulunamadı.")
+    return path
 
 
 def file_meta(name: str) -> Dict[str, Any]:
@@ -133,6 +150,20 @@ def documents():
     return {"documents": knowledge_rows()}
 
 
+@app.get("/api/files/{filename:path}")
+def open_file(filename: str):
+    path = resolve_data_file(filename)
+    ext = os.path.splitext(path)[1].lower()
+    media = "application/pdf" if ext == ".pdf" else "text/plain; charset=utf-8"
+    return FileResponse(
+        path,
+        media_type=media,
+        headers={
+            "Content-Disposition": f'inline; filename="{os.path.basename(path)}"'
+        },
+    )
+
+
 @app.get("/api/models")
 def models():
     engine = get_engine()
@@ -193,12 +224,12 @@ async def upload(files: List[UploadFile] = File(...)):
 
 
 def retrieve_for(engine: LLMEngine, query: str, source: Optional[str], top_k: int, mode: str):
-    query_vec = engine.generate_embedding(query, engine=mode)
     return retrieve_smart_chunks(
         query_text=query,
-        query_embedding=query_vec,
+        query_embedding=[],
         top_k=top_k,
         filter_source=source,
+        use_vector=False,
     )
 
 

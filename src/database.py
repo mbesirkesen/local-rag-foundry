@@ -118,6 +118,39 @@ def search_similar_chunks(query_embedding: List[float], top_k: int = 3, db_path:
     results.sort(key=lambda x: x["similarity_score"], reverse=True)
     return results[:top_k]
 
+def get_page_chunks(
+    source_file: str,
+    page_number: int,
+    db_path: str = DB_PATH,
+) -> List[Dict[str, Any]]:
+    """Aynı belgenin aynı sayfasındaki parçaları sırayla döndürür."""
+    if not os.path.exists(db_path) or not source_file:
+        return []
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT id, source_file, page_number, chunk_index, content
+        FROM document_chunks
+        WHERE source_file = ? AND page_number = ?
+        ORDER BY chunk_index
+        """,
+        (source_file, page_number),
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return [
+        {
+            "id": row[0],
+            "source_file": row[1],
+            "page_number": row[2],
+            "chunk_index": row[3],
+            "content": row[4],
+        }
+        for row in rows
+    ]
+
+
 def list_source_files(db_path: str = DB_PATH) -> List[str]:
     """Kayıtlı benzersiz kaynak dosya adlarını döndürür."""
     return [row["source_file"] for row in list_documents(db_path)]
