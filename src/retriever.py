@@ -53,6 +53,20 @@ WEAK_NAME_TOKENS = {
     "best", "good", "new", "young", "long", "white", "brown", "king",
 }
 
+# Özet / sohbet dolgu kelimeleri — grounding için "özel isim" sayılmaz.
+FOCUS_SKIP = {
+    "nasil", "hangi", "nedir", "kimdir", "hakkinda", "metindeki", "belgede",
+    "belgenin", "belgesi", "belgelerde", "peki", "takim", "takimi", "nelerdir",
+    "neler", "kritik", "bulgular", "bulgu", "ozetle", "ozet", "amacini", "amaci",
+    "fikrini", "fikri", "ana", "acikla", "anlat", "listele", "sayisal",
+    "istatistiki", "verileri", "veriler", "sonra", "once", "kadar", "gibi",
+    "edecek", "ediyor", "neden", "niye", "kim", "sen", "ben", "biz", "siz",
+    "eyalet", "eyalette", "kitap", "kitabinda", "kitabi", "yilinda", "yili",
+    "kurulmustur", "kuruldu", "hangisi", "hangisinde", "division", "for", "the",
+    "istihdam", "orani", "oran", "birey", "bireyler", "bireylerin", "uzeri",
+    "sagir", "dilsiz", "nufus", "yuzde", "staj", "suruyor", "suru",
+}
+
 GLOSSARY = {
     "sagir": ["deaf", "deafness"],
     "isitme": ["hearing"],
@@ -301,15 +315,92 @@ def distinctive_query_names(query_text: str) -> List[str]:
         flags=re.I,
     ):
         found.append(raw)
+    # Tek büyük harfle başlayan adlar (Gallaudet, Minnesota…) — kısa genel kelimeleri alma.
+    common_caps = {
+        "staj", "test", "this", "that", "when", "what", "book", "page", "from",
+        "with", "have", "been", "were", "they", "them", "then", "than",
+        "metin", "soru", "cevap", "belge",
+    }
+    for raw in re.findall(r"\b([A-ZÇĞİÖŞÜ][a-zçğıöşü]{3,})\b", text):
+        key = normalize_text(raw)
+        if key in common_caps or key in FOCUS_SKIP:
+            continue
+        if key in KNOWN_CORPUS_NAMES or len(key) >= 5:
+            found.append(raw)
     out: List[str] = []
     seen = set()
     for item in found:
         key = normalize_text(item.replace("-", " "))
-        if not key or key in seen:
+        if not key or key in seen or key in FOCUS_SKIP:
             continue
         seen.add(key)
         out.append(item)
     return out
+
+
+def _looks_inflected_turkish(token: str) -> bool:
+    turk_suffix = (
+        "mustur", "mistir", "musur", "misir", "acak", "ecek",
+        "larda", "lerde", "ndan", "nden", "sine", "sini",
+        "inin", "unun", "anin", "nin", "nun", "lar", "ler",
+        "inda", "inde", "nda", "nde", "ette", "tte", "yor",
+        "dir", "dur", "tir", "tur", "kti", "ydi", "lik", "lık",
+        "mek", "mak", "ken",
+    )
+    return any(token.endswith(suf) and len(token) > len(suf) + 3 for suf in turk_suffix)
+
+
+def content_focus_tokens(query_text: str) -> List[str]:
+    """Özel isim / bilinen varlık odaklı tokenlar (genel Türkçe konu kelimeleri değil)."""
+    text = query_text or ""
+    qn = normalize_text(text)
+    out: List[str] = []
+    seen = set()
+
+    def add(token: str) -> None:
+        key = normalize_text(token.replace("-", " "))
+        if not key or key in seen or len(key) < 4:
+            return
+        if key in STOP_WORDS or key in FOCUS_SKIP or key in GENERIC_QUERY_TERMS:
+            return
+        if key in GENERIC_NAME_TOKENS or key in WEAK_NAME_TOKENS:
+            return
+        if _looks_inflected_turkish(key):
+            return
+        seen.add(key)
+        out.append(key)
+
+    for raw in distinctive_query_names(text):
+        add(raw)
+    for name in KNOWN_CORPUS_NAMES:
+        if re.search(rf"\b{re.escape(name)}\b", qn):
+            add(name)
+
+    # Kısa sorgularda küçük harfli varlık (fenerbahce, galatasaray)
+    words = [w for w in qn.split() if w not in STOP_WORDS and w not in FOCUS_SKIP]
+    if len(words) <= 4:
+        for token in words:
+            if len(token) >= 6 and not _looks_inflected_turkish(token):
+                add(token)
+    return out
+
+
+def chunks_cover_focus(query_text: str, chunks: List[Dict[str, Any]]) -> bool:
+    """
+    Sorguda net varlık adı varsa en az biri chunk metninde geçmeli.
+    Yoksa alakasız parçadan uydurma cevabı engeller.
+    """
+    focus = content_focus_tokens(query_text)
+    if not focus:
+        return True
+    blob = normalize_text(
+        " ".join((chunk.get("content") or "") for chunk in (chunks or []))
+    )
+    compact = blob.replace(" ", "")
+    for token in focus:
+        if token in blob or token.replace(" ", "") in compact:
+            return True
+    return False
 
 
 def unknown_proper_names(query_text: str) -> List[str]:
@@ -317,9 +408,12 @@ def unknown_proper_names(query_text: str) -> List[str]:
     from src.database import content_contains
 
     missing: List[str] = []
-    for raw in distinctive_query_names(query_text):
-        spaced = normalize_text(raw.replace("-", " "))
-        compact = normalize_text(raw.replace("-", ""))
+    seen = set()
+    for raw in distinctive_query_names(query_text) + content_focus_tokens(query_text):
+        spaced = normalize_text(str(raw).replace("-", " "))
+        if not spaced or spaced in seen or spaced in FOCUS_SKIP:
+            continue
+        seen.add(spaced)
         tokens = [
             t
             for t in spaced.split()
@@ -327,20 +421,22 @@ def unknown_proper_names(query_text: str) -> List[str]:
             and t not in GENERIC_NAME_TOKENS
             and t not in STOP_WORDS
             and t not in WEAK_NAME_TOKENS
+            and t not in FOCUS_SKIP
+            and not _looks_inflected_turkish(t)
         ]
         if not tokens:
             continue
         if any(t in KNOWN_CORPUS_NAMES for t in tokens):
             continue
         found = False
-        for variant in (spaced, compact, *tokens):
-            if not variant or variant in GENERIC_NAME_TOKENS:
+        for variant in (spaced, spaced.replace(" ", ""), *tokens):
+            if not variant or variant in GENERIC_NAME_TOKENS or variant in FOCUS_SKIP:
                 continue
             if content_contains(variant):
                 found = True
                 break
         if not found:
-            missing.append(raw)
+            missing.append(str(raw))
     return missing
 
 
@@ -795,23 +891,33 @@ def rerank_chunks(
     if not candidates:
         return []
     names = citation_names(query_text)
+    focus = content_focus_tokens(query_text)
     query_nums = {re.sub(r"[^\d]", "", n) for n in re.findall(r"\d{3,}", query_text or "")}
     query_nums = {n for n in query_nums if n}
     scored = []
     for item in candidates:
         content = item.get("content") or ""
         blob = normalize_text(content[:1200])
+        compact_blob = blob.replace(" ", "")
         name_hit = 0.0
-        if names and any(name in blob or name.replace(" ", "") in blob.replace(" ", "") for name in names):
+        if names and any(name in blob or name.replace(" ", "") in compact_blob for name in names):
             name_hit = 0.4
         compact = re.sub(r"[^\d]", "", content or "")
         num_hit = 0.35 if query_nums and any(n in compact for n in query_nums) else 0.0
+        focus_hit = 0.0
+        if focus:
+            hits = sum(1 for t in focus if t in blob or t.replace(" ", "") in compact_blob)
+            focus_hit = 0.55 * (hits / len(focus))
+            if hits == 0:
+                # Odak kelime yoksa sıralamada geriye it — yanlış belgeye kaymayı azaltır.
+                focus_hit = -0.85
         fused = (
-            0.50 * float(item.get("similarity_score") or 0)
-            + 0.30 * _best_sentence_score(query_text, content)
+            0.45 * float(item.get("similarity_score") or 0)
+            + 0.25 * _best_sentence_score(query_text, content)
             + 0.15 * _term_coverage(query_text, content)
             + name_hit
             + num_hit
+            + focus_hit
         )
         scored.append((fused, item))
     scored.sort(key=lambda pair: pair[0], reverse=True)
