@@ -758,6 +758,7 @@ def retrieve_smart_chunks(
             "chunk_index": chunk_index,
             "content": content,
             "similarity_score": score,
+            "vector_score": round(cosine, 4),
             "is_relevant": (
                 not is_junk_chunk(content, page_number)
                 and (lex >= 0.22 or bm >= 0.35 or boost >= 0.28 or cosine >= 0.45 or numbered >= 0.9 or extra >= 0.8)
@@ -794,6 +795,8 @@ def rerank_chunks(
     if not candidates:
         return []
     names = citation_names(query_text)
+    query_nums = {re.sub(r"[^\d]", "", n) for n in re.findall(r"\d{3,}", query_text or "")}
+    query_nums = {n for n in query_nums if n}
     scored = []
     for item in candidates:
         content = item.get("content") or ""
@@ -801,11 +804,14 @@ def rerank_chunks(
         name_hit = 0.0
         if names and any(name in blob or name.replace(" ", "") in blob.replace(" ", "") for name in names):
             name_hit = 0.4
+        compact = re.sub(r"[^\d]", "", content or "")
+        num_hit = 0.35 if query_nums and any(n in compact for n in query_nums) else 0.0
         fused = (
             0.50 * float(item.get("similarity_score") or 0)
             + 0.30 * _best_sentence_score(query_text, content)
             + 0.15 * _term_coverage(query_text, content)
             + name_hit
+            + num_hit
         )
         scored.append((fused, item))
     scored.sort(key=lambda pair: pair[0], reverse=True)
