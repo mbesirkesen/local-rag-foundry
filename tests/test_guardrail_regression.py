@@ -29,6 +29,14 @@ def run_tests():
     assert early and early["not_found"] and "Net soru" in early["verification"]["verification_status"]
     early2 = preflight_query("fenerbahce nedir", "fallback")
     assert early2 and early2["not_found"]
+    early3 = preflight_query("peki sence fenerbahce bu sene sampiyon olur mu?", "fallback")
+    assert early3 and early3["not_found"]
+    assert "fenerbahce" in content_focus_tokens("peki sence fenerbahce bu sene sampiyon olur mu?")
+    assert preflight_query("İlk kalıcı sağır okulu hangi şehirde kuruldu?", "fallback") is None
+    assert preflight_query("ELIZA'yı kim geliştirdi?", "fallback") is None
+    assert preflight_query("Juniper Research chatbot pazarını nasıl öngörüyor?", "fallback") is None
+    assert "gelistirdi" not in content_focus_tokens("ELIZA'yı kim geliştirdi?")
+    assert "kalici" not in content_focus_tokens("İlk kalıcı sağır okulu hangi şehirde kuruldu?")
     print("[OK] preflight")
 
     hist = [

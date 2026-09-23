@@ -62,9 +62,16 @@ FOCUS_SKIP = {
     "istatistiki", "verileri", "veriler", "sonra", "once", "kadar", "gibi",
     "edecek", "ediyor", "neden", "niye", "kim", "sen", "ben", "biz", "siz",
     "eyalet", "eyalette", "kitap", "kitabinda", "kitabi", "yilinda", "yili",
-    "kurulmustur", "kuruldu", "hangisi", "hangisinde", "division", "for", "the",
+    "kurulmustur", "kuruldu", "kurulan", "kurul", "hangisi", "hangisinde",
+    "division", "for", "the",
     "istihdam", "orani", "oran", "birey", "bireyler", "bireylerin", "uzeri",
     "sagir", "dilsiz", "nufus", "yuzde", "staj", "suruyor", "suru",
+    "ilk", "kalici", "okul", "okulu", "okullar", "sehir", "sehirde", "sehri",
+    "gelistir", "gelistirdi", "gelistiren", "gelistirme", "gelistirmek",
+    "nerede", "nereye", "neresi", "neydi",
+    "sence", "bence", "tahmin", "sampiyon", "sampiyonluk", "sezon", "sene",
+    "olur", "olmaz", "acaba", "desene", "soyle", "lutfen",
+    "mac", "gol", "lig", "kupa",
 }
 
 GLOSSARY = {
@@ -287,6 +294,12 @@ KNOWN_CORPUS_NAMES = {
     "chong", "microsoft", "ibm", "siri", "alexa", "cortana",
 }
 
+# Belgede yokken uydurma cevap üretmemek için bilinen OOD marka/takım adları.
+OOD_NAME_HINTS = {
+    "fenerbahce", "galatasaray", "besiktas", "trabzonspor",
+    "barcelona", "liverpool", "arsenal", "chelsea", "manchester",
+}
+
 GENERIC_NAME_TOKENS = {
     "chat", "bot", "chatbot", "chatbots", "test", "demo", "app", "pdf",
     "proje", "project", "research", "journal", "business", "studies",
@@ -341,12 +354,15 @@ def _looks_inflected_turkish(token: str) -> bool:
     turk_suffix = (
         "mustur", "mistir", "musur", "misir", "acak", "ecek",
         "larda", "lerde", "ndan", "nden", "sine", "sini",
-        "inin", "unun", "anin", "nin", "nun", "lar", "ler",
+        "inin", "unun", "anin", "nin", "nun", "ini", "uni", "ani",
+        "lar", "ler",
         "inda", "inde", "nda", "nde", "ette", "tte", "yor",
-        "dir", "dur", "tir", "tur", "kti", "ydi", "lik", "lık",
-        "mek", "mak", "ken",
+        "yordu", "irdi", "ardi", "erdi", "ordu", "urdu",
+        "dir", "dur", "tir", "tur", "kti", "ydi", "lik",
+        "mek", "mak", "ken", "ici", "aci", "ucu", "eci",
+        "de", "da", "te", "ta", "di", "du", "ti", "tu",
     )
-    return any(token.endswith(suf) and len(token) > len(suf) + 3 for suf in turk_suffix)
+    return any(token.endswith(suf) and len(token) >= len(suf) + 3 for suf in turk_suffix)
 
 
 def content_focus_tokens(query_text: str) -> List[str]:
@@ -372,6 +388,9 @@ def content_focus_tokens(query_text: str) -> List[str]:
     for raw in distinctive_query_names(text):
         add(raw)
     for name in KNOWN_CORPUS_NAMES:
+        if re.search(rf"\b{re.escape(name)}\b", qn):
+            add(name)
+    for name in OOD_NAME_HINTS:
         if re.search(rf"\b{re.escape(name)}\b", qn):
             add(name)
 
@@ -402,9 +421,19 @@ def unknown_proper_names(query_text: str) -> List[str]:
     """Yüklenen belgelerde geçmeyen ayırt edici özel isimleri döndürür."""
     from src.database import content_contains
 
+    qn = normalize_text(query_text or "")
     missing: List[str] = []
     seen = set()
-    for raw in distinctive_query_names(query_text) + content_focus_tokens(query_text):
+    candidates: List[str] = list(distinctive_query_names(query_text))
+    for name in OOD_NAME_HINTS:
+        if re.search(rf"\b{re.escape(name)}\b", qn):
+            candidates.append(name)
+    # Kısa sorguda ek odak; uzun cümledeki dolgu kelimeleri red metnine girmez.
+    words = [w for w in qn.split() if w not in STOP_WORDS and w not in FOCUS_SKIP]
+    if len(words) <= 4:
+        candidates.extend(content_focus_tokens(query_text))
+
+    for raw in candidates:
         spaced = normalize_text(str(raw).replace("-", " "))
         if not spaced or spaced in seen or spaced in FOCUS_SKIP:
             continue
@@ -432,7 +461,13 @@ def unknown_proper_names(query_text: str) -> List[str]:
                 break
         if not found:
             missing.append(str(raw))
-    return missing
+
+    # Varsa önce bilinen OOD isimleri göster (temiz red metni).
+    ood_only = [
+        m for m in missing
+        if normalize_text(str(m).replace("-", " ")) in OOD_NAME_HINTS
+    ]
+    return ood_only or missing
 
 
 def is_junk_chunk(content: str, page_number: int = 0) -> bool:
