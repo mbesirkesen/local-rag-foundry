@@ -31,7 +31,6 @@ from src.retriever import (
     entity_boost,
     lexical_score,
     normalize_text,
-    query_terms,
     search_terms,
 )
 
@@ -54,7 +53,6 @@ NOT_FOUND = "YÃ¼klenen belgelerde bu soruyla ilgili yeterli bilgi bulunmamaktadÄ
 class LLMEngine:
     def __init__(self, model_id: str = "Phi-4-mini-instruct-generic-cpu:5"):
         self.model_id = model_id
-        self.client = None
         self.foundry_model = None
         self.is_foundry_active = False
 
