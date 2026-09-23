@@ -64,7 +64,8 @@ Arayüz Türkçedir. Ana uygulama FastAPI + `static/` web arayüzüdür (`http:/
 
 ## Kurulum
 
-Python 3.10+ gerekir.
+Python 3.11+ gerekir.
+
 
 ```powershell
 cd verifiable-local-rag
