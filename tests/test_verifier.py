@@ -1,7 +1,6 @@
 import os
 import sys
 
-# Ana klasörü sys.path'e ekle
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from src.verifier import verify_citations
@@ -17,7 +16,6 @@ def run_tests():
         }
     ]
     
-    # 1. Doğru Alıntı Testi
     correct_response = "Microsoft staj programı uzaktan yürütülmektedir ve 4 hafta sürer."
     res1 = verify_citations(correct_response, mock_chunks)
     
@@ -25,7 +23,6 @@ def run_tests():
     assert "rehber.pdf (Sayfa 3)" in res1["verified_citations"]
     print("[OK] Verified Citation Test Passed (%100 Confidence)")
 
-    # 2. Uydurma / Yanlış Bilgi Testi (Hallucinated Sentence)
     fake_response = "Uzay mekikleri roket yakıtı ile hidrojen kullanır."
     res2 = verify_citations(fake_response, mock_chunks)
     

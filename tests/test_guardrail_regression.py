@@ -1,4 +1,4 @@
-"""Regresyon: görülen hata sınıfları (uydurma eşleşme, dolgu, takip sızıntısı)."""
+"""Guardrail regresyon: uydurma eşleşme, dolgu, takip sızıntısı."""
 import os
 import sys
 
@@ -38,11 +38,9 @@ def run_tests():
     assert looks_like_followup("peki fenerbahce", hist) is False
     expanded = expand_query("peki fenerbahce", hist)
     assert "galatasaray" not in expanded.lower() or expanded == "peki fenerbahce"
-    # After abstention, expand returns query only
     assert expand_query("peki daha ne var", hist) == "peki daha ne var" or "bulunmamakta" not in expand_query("peki daha ne var", hist)
     print("[OK] followup after abstention")
 
-    # Rerank: focus-missing chunk should rank below focus-hit
     cands = [
         {"content": "Chatbotlar egitim ve pazarlamada kullanilir.", "similarity_score": 2.0},
         {"content": "Thomas Hopkins Gallaudet Hartford Connecticut permanent school.", "similarity_score": 0.5},
@@ -51,7 +49,6 @@ def run_tests():
     assert "Gallaudet" in ranked[0]["content"]
     print("[OK] rerank prefers focus")
 
-    # Verifier: TR answer + EN chunk with shared name/number
     chunks = [{
         "source_file": "deneme.pdf",
         "page_number": 72,
@@ -64,7 +61,6 @@ def run_tests():
     assert v["confidence_score"] > 0
     print("[OK] verifier name bridge")
 
-    # finalize strips source on abstention
     out = finalize_response(
         query="x",
         cleaned="Yeterli bilgi bulunmamaktadir.\n\n(Kaynak: a.pdf, Sayfa 1)",

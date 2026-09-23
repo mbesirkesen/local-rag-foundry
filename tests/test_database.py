@@ -2,7 +2,6 @@ import os
 import sys
 import math
 
-# Proje dizinini sys.path'e ekle
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from src.database import init_db, save_chunks, search_similar_chunks, clear_db, cosine_similarity, delete_source, list_documents
@@ -10,13 +9,10 @@ from src.database import init_db, save_chunks, search_similar_chunks, clear_db, 
 TEST_DB = os.path.join(os.path.dirname(__file__), "test_vector.db")
 
 def run_tests():
-    """Bağımsız test koşturucu."""
     print("--- Database Module Unit Tests Starting ---")
     
-    # 1. Veritabanını kur
     init_db(TEST_DB)
     
-    # 2. Kosinüs Benzerliği Testi
     v1 = [1.0, 0.0, 0.0]
     v2 = [1.0, 0.0, 0.0]
     v3 = [0.0, 1.0, 0.0]
@@ -25,7 +21,6 @@ def run_tests():
     assert math.isclose(cosine_similarity(v1, v3), 0.0), "Kosinüs benzerliği dik vektörler için 0.0 olmalı!"
     print("[OK] Cosine Similarity Test Passed")
 
-    # 3. Veritabanı Kayıt & Arama Testi
     sample_data = [
         {
             "source_file": "doc1.txt",
@@ -45,7 +40,6 @@ def run_tests():
     
     save_chunks(sample_data, db_path=TEST_DB)
     
-    # "Yapay zeka" ile alakalı sorgu vektörü ([1.0, 0.0, 0.0])
     query_vec = [1.0, 0.0, 0.0]
     results = search_similar_chunks(query_vec, top_k=1, db_path=TEST_DB)
     
@@ -58,7 +52,6 @@ def run_tests():
     assert list_documents(TEST_DB) == []
     print("[OK] Delete Source Test Passed")
 
-    # Temizlik
     if os.path.exists(TEST_DB):
         os.remove(TEST_DB)
         

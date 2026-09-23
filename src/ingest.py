@@ -3,7 +3,6 @@ import re
 from typing import List, Dict, Any
 from pypdf import PdfReader
 
-# pdfplumber kütüphanesi kontrolü
 HAS_PDFPLUMBER = False
 try:
     import pdfplumber
@@ -12,9 +11,6 @@ except ImportError:
     HAS_PDFPLUMBER = False
 
 def extract_tables_as_markdown(page_obj) -> str:
-    """
-    pdfplumber sayfa nesnesinden tabloları çıkarır ve Markdown tablo formatına çevirir.
-    """
     if not HAS_PDFPLUMBER:
         return ""
         
@@ -22,16 +18,14 @@ def extract_tables_as_markdown(page_obj) -> str:
     try:
         tables = page_obj.extract_tables()
         for table in tables:
-            if not table or len(table) < 2:  # En az 1 başlık + 1 veri satırı olmalı
+            if not table or len(table) < 2:
                 continue
                 
             md_lines = []
-            # Başlık Satırı (Header)
             header = [str(cell).strip() if cell else "" for cell in table[0]]
             md_lines.append("| " + " | ".join(header) + " |")
             md_lines.append("|" + "|".join(["---"] * len(header)) + "|")
             
-            # Veri Satırları
             for row in table[1:]:
                 row_cells = [str(cell).strip() if cell else "" for cell in row]
                 md_lines.append("| " + " | ".join(row_cells) + " |")
@@ -191,12 +185,8 @@ def extract_page_plain_text(page) -> str:
 
 
 def extract_text_by_pages(pdf_path: str) -> List[Dict[str, Any]]:
-    """
-    PDF dosyasını sayfa sayfa okur. Hem düz metni hem de TABLOLARI (Markdown olarak) çıkarır.
-    """
     pages_data = []
     
-    # 1. Öncelik: pdfplumber ile Tablo ve Metin Çıkarma
     if HAS_PDFPLUMBER:
         try:
             with pdfplumber.open(pdf_path) as pdf:
@@ -220,7 +210,6 @@ def extract_text_by_pages(pdf_path: str) -> List[Dict[str, Any]]:
         except Exception as e:
             print(f"pdfplumber ayrıştırma hatası, pypdf fallback moduna geçiliyor: {e}")
 
-    # 2. Fallback: pypdf kütüphanesi
     reader = PdfReader(pdf_path)
     for idx, page in enumerate(reader.pages):
         text = page.extract_text() or ""
@@ -234,9 +223,7 @@ def extract_text_by_pages(pdf_path: str) -> List[Dict[str, Any]]:
     return pages_data
 
 def chunk_text(text: str, chunk_size: int = 250, overlap: int = 30) -> List[str]:
-    """
-    Verilen metni kelime bazlı, çakışmalı (overlapping) parçalara böler.
-    """
+    """Kelime bazlı, çakışmalı parçalara böler."""
     words = text.split()
     if len(words) <= chunk_size:
         return [text]
@@ -377,9 +364,6 @@ def semantic_chunk_text(
 
 
 def process_document(file_path: str, chunk_size: int = 250, overlap: int = 30) -> List[Dict[str, Any]]:
-    """
-    Ana İşleme Fonksiyonu: PDF (Metin + Tablolar) veya TXT dosyasını alır ve parçalar.
-    """
     filename = os.path.basename(file_path)
     chunks_with_metadata = []
     

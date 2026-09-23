@@ -32,10 +32,7 @@ def verify_citations(
     retrieved_chunks: List[Dict[str, Any]],
     query_text: str = "",
 ) -> Dict[str, Any]:
-    """
-    Yanıtın kaynaklarla örtüşmesini ölçer.
-    Türkçe cevap / İngilizce kaynakta sayı ve özel isim eşleşmesini güçlendirir.
-    """
+    """TR cevap / EN kaynakta sayı ve özel isim eşleşmesini güçlendirir."""
     empty = {
         "verified_citations": [],
         "details": [],
@@ -98,7 +95,7 @@ def verify_citations(
             chunk_nums = _numbers(chunk_text)
             if sent_nums and sent_nums.intersection(chunk_nums):
                 overlap_ratio = max(overlap_ratio, 0.55)
-            # Özel isim / odak kelime ortaklığı (TR↔EN çeviride kelime Jaccard düşük kalır)
+            # TR↔EN çeviride kelime Jaccard düşük kalır; isim ortaklığını say.
             name_hits = sum(
                 1
                 for name in query_names

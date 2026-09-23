@@ -2,7 +2,6 @@ import os
 import sys
 import math
 
-# Projenin gerçek kök dizinini sys.path'e açıkça ekle
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
@@ -36,7 +35,6 @@ def run_tests():
     
     save_chunks(sample_chunks, db_path=TEST_DB)
     
-    # 1. Filtreleme Testi (Source Filter)
     filtered = retrieve_smart_chunks(
         query_text="Çalıştay",
         query_embedding=[1.0, 0.0, 0.0],
@@ -49,8 +47,6 @@ def run_tests():
     assert filtered[0]["source_file"] == "baro_raporu.pdf"
     print("[OK] Source File Filtering Test Passed")
 
-    # 2. Document Score Boosting Testi
-    # "baro" sorgusu sorulduğunda baro_raporu.pdf bonus almalı
     boosted = retrieve_smart_chunks(
         query_text="baro raporu detayları",
         query_embedding=[0.9, 0.1, 0.0],
@@ -62,7 +58,6 @@ def run_tests():
     assert boosted[0]["source_file"] == "baro_raporu.pdf", "Boosting algoritması baro raporunu en üste çıkarmalıydı!"
     print("[OK] Score Boosting Algorithm Test Passed")
 
-    # Temizlik
     if os.path.exists(TEST_DB):
         os.remove(TEST_DB)
         

@@ -112,10 +112,6 @@ class LLMEngine:
         return target_model
 
     def generate_embedding(self, text: str, engine: str = "auto") -> List[float]:
-        """
-        Metin için 384 boyutlu vektör üretir.
-        engine: auto | foundry | fallback
-        """
         use_foundry = engine != "fallback" and self.is_foundry_active and self.foundry_model
         if use_foundry:
             try:
@@ -1152,7 +1148,6 @@ class LLMEngine:
                 return named_direct[0]
             if named:
                 return named[0]
-        # Lexical en iyi chunk
         best = chunks[0]
         best_score = -1.0
         for chunk in chunks:
@@ -1387,7 +1382,6 @@ class LLMEngine:
         words = [w for w in re.findall(r"\w+", low) if len(w) > 1]
         if len(words) < 2:
             return False
-        # Odak kelime soruda varsa cevapta veya en azından kaynak cümlede iz bırakmalı
         from src.retriever import content_focus_tokens
 
         focus = content_focus_tokens(query)

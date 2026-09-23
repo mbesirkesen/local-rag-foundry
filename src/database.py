@@ -4,14 +4,9 @@ import numpy as np
 import os
 from typing import List, Dict, Any
 
-# Veritabanı dosya yolu: data/vector_store.db
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "vector_store.db")
 
 def init_db(db_path: str = DB_PATH):
-    """
-    SQLite veritabanını ve 'document_chunks' tablosunu ilklendirir.
-    Vektörler 'embedding' alanında JSON String (TEXT) formatında saklanır.
-    """
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -31,23 +26,10 @@ def init_db(db_path: str = DB_PATH):
     conn.close()
 
 def save_chunks(chunks_data: List[Dict[str, Any]], db_path: str = DB_PATH):
-    """
-    Parçalanmış metin ve vektör listesini veritabanına kaydeder.
-    
-    chunks_data nesne yapısı:
-    {
-        "source_file": "ders_notu.pdf",
-        "page_number": 1,
-        "chunk_index": 1,
-        "content": "Metin içeriği...",
-        "embedding": [0.12, -0.45, ...] # list veya np.ndarray
-    }
-    """
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
     for item in chunks_data:
-        # Vektörü JSON string'e çeviriyoruz (Örn: "[0.12, -0.45, 0.89]")
         embedding_val = item["embedding"]
         if isinstance(embedding_val, np.ndarray):
             embedding_val = embedding_val.tolist()
@@ -63,10 +45,6 @@ def save_chunks(chunks_data: List[Dict[str, Any]], db_path: str = DB_PATH):
     conn.close()
 
 def cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
-    """
-    İki liste/vektör arasındaki Kosinüs Benzerliğini (Cosine Similarity) hesaplar.
-    Sonuç 0.0 (tamamen farklı) ile 1.0 (birebir aynı anlama gelen) arasındadır.
-    """
     if len(vec1) != len(vec2):
         return 0.0
 
@@ -83,9 +61,6 @@ def cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
     return float(dot_product / (norm_v1 * norm_v2))
 
 def search_similar_chunks(query_embedding: List[float], top_k: int = 3, db_path: str = DB_PATH) -> List[Dict[str, Any]]:
-    """
-    Sorgu vektörüne (query_embedding) kosinüs benzerliği en yüksek olan top_k sayıda kaydı getirir.
-    """
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
@@ -97,7 +72,6 @@ def search_similar_chunks(query_embedding: List[float], top_k: int = 3, db_path:
     
     for row in rows:
         chunk_id, source_file, page_number, chunk_index, content, embedding_json = row
-        # JSON string'i tekrar Python listesine çeviriyoruz
         chunk_vector = json.loads(embedding_json)
         
         if len(query_embedding) != len(chunk_vector):
@@ -114,7 +88,6 @@ def search_similar_chunks(query_embedding: List[float], top_k: int = 3, db_path:
             "similarity_score": score
         })
         
-    # Skorlara göre büyükten küçüğe sırala
     results.sort(key=lambda x: x["similarity_score"], reverse=True)
     return results[:top_k]
 
@@ -123,7 +96,6 @@ def get_page_chunks(
     page_number: int,
     db_path: str = DB_PATH,
 ) -> List[Dict[str, Any]]:
-    """Aynı belgenin aynı sayfasındaki parçaları sırayla döndürür."""
     if not os.path.exists(db_path) or not source_file:
         return []
     conn = sqlite3.connect(db_path)
@@ -152,7 +124,6 @@ def get_page_chunks(
 
 
 def list_source_files(db_path: str = DB_PATH) -> List[str]:
-    """Kayıtlı benzersiz kaynak dosya adlarını döndürür."""
     return [row["source_file"] for row in list_documents(db_path)]
 
 
@@ -168,7 +139,6 @@ def chunk_count(db_path: str = DB_PATH) -> int:
 
 
 def list_documents(db_path: str = DB_PATH) -> List[Dict[str, Any]]:
-    """Dosya bazında parça sayısı döndürür."""
     if not os.path.exists(db_path):
         return []
     conn = sqlite3.connect(db_path)
@@ -190,7 +160,6 @@ def list_documents(db_path: str = DB_PATH) -> List[Dict[str, Any]]:
 
 
 def content_contains(term: str, db_path: str = DB_PATH) -> bool:
-    """Metin parçasında (büyük/küçük harf duyarsız) geçen bir ifade var mı."""
     needle = (term or "").strip()
     if not needle or not os.path.exists(db_path):
         return False
@@ -216,7 +185,6 @@ def delete_source(source_file: str, db_path: str = DB_PATH) -> None:
 
 
 def clear_db(db_path: str = DB_PATH):
-    """Veritabanındaki tüm kayıtları siler."""
     if os.path.exists(db_path):
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()

@@ -53,7 +53,7 @@ WEAK_NAME_TOKENS = {
     "best", "good", "new", "young", "long", "white", "brown", "king",
 }
 
-# Özet / sohbet dolgu kelimeleri — grounding için "özel isim" sayılmaz.
+# Grounding için özel isim sayılmayan dolgu/özet kelimeleri.
 FOCUS_SKIP = {
     "nasil", "hangi", "nedir", "kimdir", "hakkinda", "metindeki", "belgede",
     "belgenin", "belgesi", "belgelerde", "peki", "takim", "takimi", "nelerdir",
@@ -315,7 +315,6 @@ def distinctive_query_names(query_text: str) -> List[str]:
         flags=re.I,
     ):
         found.append(raw)
-    # Tek büyük harfle başlayan adlar (Gallaudet, Minnesota…) — kısa genel kelimeleri alma.
     common_caps = {
         "staj", "test", "this", "that", "when", "what", "book", "page", "from",
         "with", "have", "been", "were", "they", "them", "then", "than",
@@ -376,7 +375,6 @@ def content_focus_tokens(query_text: str) -> List[str]:
         if re.search(rf"\b{re.escape(name)}\b", qn):
             add(name)
 
-    # Kısa sorgularda küçük harfli varlık (fenerbahce, galatasaray)
     words = [w for w in qn.split() if w not in STOP_WORDS and w not in FOCUS_SKIP]
     if len(words) <= 4:
         for token in words:
@@ -386,10 +384,7 @@ def content_focus_tokens(query_text: str) -> List[str]:
 
 
 def chunks_cover_focus(query_text: str, chunks: List[Dict[str, Any]]) -> bool:
-    """
-    Sorguda net varlık adı varsa en az biri chunk metninde geçmeli.
-    Yoksa alakasız parçadan uydurma cevabı engeller.
-    """
+    """Sorguda net varlık adı varsa en az biri chunk'ta geçmeli."""
     focus = content_focus_tokens(query_text)
     if not focus:
         return True
@@ -909,7 +904,6 @@ def rerank_chunks(
             hits = sum(1 for t in focus if t in blob or t.replace(" ", "") in compact_blob)
             focus_hit = 0.55 * (hits / len(focus))
             if hits == 0:
-                # Odak kelime yoksa sıralamada geriye it — yanlış belgeye kaymayı azaltır.
                 focus_hit = -0.85
         fused = (
             0.45 * float(item.get("similarity_score") or 0)

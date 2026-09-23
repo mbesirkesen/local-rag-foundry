@@ -36,7 +36,7 @@ PRESENCE_HINTS = (
     "deginil", "deginiyor", "iceriyor mu", "yer aliyor mu",
 )
 
-# Tek başına anlamsız / dolgu — belgede rastgele kelime eşleşmesine düşmesin.
+# Tek başına dolgu — belgede rastgele kelime eşleşmesine düşmesin.
 BARE_PROMPTS = {
     "pek", "peki", "ee", "eee", "hmm", "hm", "ok", "okay", "tamam",
     "evet", "hayir", "yo", "yok", "var", "devam", "anladim", "anladım",
@@ -237,7 +237,7 @@ def expand_query(
         return query
     if not looks_like_followup(query, history):
         return query
-    # Red/clarify sonrası genişletme yapma — önceki gürültüyü yeni soruya taşıma.
+    # Red sonrası genişletme yapma — önceki gürültüyü yeni soruya taşıma.
     last_low = (last_a or "").lower()
     if any(
         m in last_low
@@ -273,7 +273,7 @@ def expand_query(
             seen.add(key)
             unique.append(item)
 
-    # Yalnızca soru + önceki soru + isimler; önceki cevap gövdesini ekleme (yanlış bağlama).
+    # Önceki cevap gövdesini ekleme (yanlış bağlama).
     parts = [query, last_q]
     if unique:
         parts.append(" ".join(unique[:8]))

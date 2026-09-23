@@ -1,11 +1,3 @@
-"""
-Soru–kaynak–cevap tutarlılık yardımcıları.
-
-Amaç: daha çok "kapatmak" değil; yanlış eşleşmeyi düzeltmek.
-- Dolgu ("pek") ve belgede olmayan özel isim → doğru red (uydurma yerine)
-- Red yanıtında kaynak satırı temizliği
-- Rozette sadakat + soru ilgisi (yalnızca kopya=%100 olmasın)
-"""
 from __future__ import annotations
 
 import re
@@ -80,7 +72,6 @@ def select_context_chunks(
     *,
     min_score: float,
 ) -> List[Dict[str, Any]]:
-    """Alakalı chunk'ları seç; odak kelime yoksa üretme (yanlış belgeye kaymayı keser)."""
     relevant = [c for c in answer_chunks if c.get("is_relevant")]
     usable = relevant or [
         c for c in answer_chunks if float(c.get("similarity_score") or 0) >= min_score
@@ -114,7 +105,6 @@ def finalize_response(
     engine_used: str,
     public_chunk_fn,
 ) -> Dict[str, Any]:
-    """Üretim sonrası: çelişki temizliği + dürüst rozet (sadakat × soru ilgisi)."""
     q_rel = query_chunk_relevance(query, usable)
     verification = dict(verification or {})
     faith = float(verification.get("confidence_score") or 0)
@@ -135,7 +125,6 @@ def finalize_response(
                 status = "Bilgi Belgelerde Bulunamadı"
         return reject_payload(cleaned, status=status, engine_used=engine_used)
 
-    # Rozet: sadece kopya skoruna güvenme; soru–kaynak ilgisini karıştır
     combined = round(0.6 * faith + 0.4 * min(100.0, q_rel * 200), 1)
     combined = max(0.0, min(100.0, combined))
     verification["confidence_score"] = combined

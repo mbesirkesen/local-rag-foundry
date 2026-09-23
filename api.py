@@ -39,7 +39,7 @@ ROOT = os.path.dirname(__file__)
 DATA_DIR = os.path.join(ROOT, "data")
 STATIC_DIR = os.path.join(ROOT, "static")
 
-# Alakasız / zayıf chunk'larla cevap üretme eşiği (similarity_score 0–1+ ölçeğinde).
+# Zayıf chunk'larla cevap üretme eşiği.
 MIN_ANSWER_SCORE = 0.35
 
 _engine: Optional[LLMEngine] = None
