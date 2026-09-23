@@ -20,7 +20,11 @@ function renderFiles() {
   $("fileList").innerHTML = state.files
     .map((name) => {
       const href = `/api/files/${encodeURIComponent(name)}`;
-      return `<li><a href="${href}" target="_blank" rel="noopener" title="Belgeyi aç">${escapeHtml(name)}</a></li>`;
+      const safe = encodeURIComponent(name);
+      return `<li>
+        <a href="${href}" target="_blank" rel="noopener" title="Belgeyi aç">${escapeHtml(name)}</a>
+        <button type="button" class="file-del" data-file="${safe}" title="Belgeyi sil" aria-label="Belgeyi sil">Sil</button>
+      </li>`;
     })
     .join("");
   $("emptyFiles").hidden = state.files.length > 0;
@@ -30,6 +34,14 @@ function renderFiles() {
     .map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
     .join("");
   if ([...select.options].some((opt) => opt.value === current)) select.value = current;
+  else select.value = "";
+  $("fileList").querySelectorAll(".file-del").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      removeFile(decodeURIComponent(btn.dataset.file || ""));
+    });
+  });
 }
 
 function renderEmpty() {
@@ -67,10 +79,53 @@ function addMessage(role, text) {
   return el;
 }
 
+function verificationLabel(info) {
+  if (!info) return "";
+  const kind = info.kind || (info.confidence_score >= 60 ? "ok" : "low");
+  const status = info.verification_status || "";
+  if (kind === "reject" || kind === "empty") return status || "Doğrulama yok";
+  const score = Number(info.confidence_score);
+  const scoreText = Number.isFinite(score) ? `%${score}` : "";
+  return [scoreText, status].filter(Boolean).join(" · ");
+}
+
+function setVerification(el, info) {
+  if (!el) return;
+  el.querySelectorAll(".verify").forEach((node) => node.remove());
+  const label = verificationLabel(info);
+  if (!label) return;
+  const kind = info.kind || (info.confidence_score >= 60 ? "ok" : "low");
+  const bar = document.createElement("div");
+  bar.className = `verify verify-${kind}`;
+  bar.textContent = label;
+  el.appendChild(bar);
+}
+
 async function loadFiles() {
   const data = await api("/api/documents");
   state.files = (data.documents || []).map((d) => d.filename);
   renderFiles();
+}
+
+async function removeFile(name) {
+  if (!name) return;
+  const short = name.length > 48 ? `${name.slice(0, 45)}…` : name;
+  if (!window.confirm(`“${short}” silinsin mi? Dosya ve indeksi kaldırılır.`)) return;
+  const msg = addMessage("assistant", "Belge siliniyor…");
+  try {
+    const data = await api(`/api/documents/${encodeURIComponent(name)}`, { method: "DELETE" });
+    state.files = (data.documents || []).map((d) => d.filename);
+    renderFiles();
+    if (!state.files.length) {
+      state.history = [];
+      $("thread").innerHTML = "";
+      addMessage("assistant", `Silindi: ${name}`);
+    } else {
+      msg.querySelector(".body").textContent = `Silindi: ${name}`;
+    }
+  } catch (err) {
+    msg.querySelector(".body").textContent = err.message;
+  }
 }
 
 async function upload(fileList) {
@@ -108,6 +163,7 @@ async function chat(query) {
     });
     const answer = data.answer || "";
     pending.querySelector(".body").innerHTML = formatAnswer(answer);
+    setVerification(pending, data.verification);
     state.history.push({ role: "user", content: query });
     state.history.push({ role: "assistant", content: answer });
   } catch (err) {
@@ -131,5 +187,18 @@ $("composer").addEventListener("submit", (e) => {
   chat(query);
 });
 
+async function loadStatus() {
+  const el = $("runtimeStatus");
+  if (!el) return;
+  try {
+    const data = await api("/api/status");
+    const name = data.model_name || (data.foundry ? "Foundry" : "Yedek");
+    el.textContent = `${data.runtime || "Motor"} · ${name}`;
+  } catch {
+    el.textContent = "Motor durumu alınamadı";
+  }
+}
+
 renderEmpty();
+loadStatus();
 loadFiles().catch(() => {});

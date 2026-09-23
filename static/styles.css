@@ -29,6 +29,12 @@ button, input { font: inherit; }
 
 .brand strong { display: block; font-size: 16px; }
 .brand span { color: var(--muted); font-size: 12px; }
+.brand .runtime {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
 
 .upload {
   display: block;
@@ -47,11 +53,16 @@ button, input { font: inherit; }
   overflow: auto;
 }
 .files li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   border-bottom: 1px solid var(--line);
   font-size: 13px;
   word-break: break-all;
 }
 .files a {
+  flex: 1;
+  min-width: 0;
   display: block;
   padding: 8px 0;
   color: inherit;
@@ -61,6 +72,20 @@ button, input { font: inherit; }
 .files a:hover {
   color: var(--accent);
   text-decoration: underline;
+}
+.file-del {
+  flex-shrink: 0;
+  margin: 4px 0;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--muted);
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.file-del:hover {
+  color: #b42318;
+  border-color: #d4a19a;
 }
 .muted { margin: 0; color: var(--muted); font-size: 13px; }
 
@@ -115,6 +140,16 @@ button, input { font: inherit; }
 }
 .msg .body { white-space: pre-wrap; }
 .msg .body a { color: var(--accent); }
+.verify {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--line);
+  font-size: 11px;
+  color: var(--muted);
+}
+.verify-ok { color: #0f7b4a; }
+.verify-low { color: #9a6700; }
+.verify-reject, .verify-empty { color: var(--muted); }
 
 .composer {
   display: grid;
