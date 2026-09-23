@@ -1,7 +1,13 @@
 import re
 from typing import Dict, List, Optional, Tuple
 
-from src.retriever import citation_names, distinctive_query_names, mixed_domain_query, normalize_text
+from src.retriever import (
+    citation_names,
+    content_focus_tokens,
+    distinctive_query_names,
+    mixed_domain_query,
+    normalize_text,
+)
 
 FOLLOWUP_PHRASES = (
     "o zaman", "peki ya", "ya o", "bu okul", "bu kisi", "bu kitap",
@@ -29,6 +35,30 @@ PRESENCE_HINTS = (
     "bahsediliyor", "geciyor mu", "gecer mi", "var mi", "soz ediliyor",
     "deginil", "deginiyor", "iceriyor mu", "yer aliyor mu",
 )
+
+# Tek başına anlamsız / dolgu — belgede rastgele kelime eşleşmesine düşmesin.
+BARE_PROMPTS = {
+    "pek", "peki", "ee", "eee", "hmm", "hm", "ok", "okay", "tamam",
+    "evet", "hayir", "yo", "yok", "var", "devam", "anladim", "anladım",
+}
+
+CLARIFY_PROMPT = (
+    "Lütfen belgenle ilgili net bir soru yaz. "
+    "Tek başına 'peki' / 'pek' gibi ifadelerle arama yapılmıyor."
+)
+
+
+def is_bare_prompt(query: str) -> bool:
+    qn = normalize_text(query or "")
+    if not qn:
+        return True
+    words = qn.split()
+    if len(words) == 1 and words[0] in BARE_PROMPTS:
+        return True
+    if len(words) <= 2 and all(w in BARE_PROMPTS or w in FOLLOWUP_WORDS for w in words):
+        if not content_focus_tokens(query):
+            return True
+    return False
 
 
 def is_compare_query(query: str) -> bool:
@@ -129,6 +159,8 @@ def _has_new_topic_name(query: str, history: Optional[List[Dict[str, str]]]) -> 
     names = list(citation_names(query or ""))
     for raw in distinctive_query_names(query or ""):
         names.append(normalize_text(raw.replace("-", " ")))
+    for raw in content_focus_tokens(query or ""):
+        names.append(raw)
     for name in names:
         if len(name) < 4:
             continue
@@ -205,15 +237,26 @@ def expand_query(
         return query
     if not looks_like_followup(query, history):
         return query
+    # Red/clarify sonrası genişletme yapma — önceki gürültüyü yeni soruya taşıma.
+    last_low = (last_a or "").lower()
+    if any(
+        m in last_low
+        for m in (
+            "bulunmamaktadır",
+            "geçmemektedir",
+            "net bir soru",
+            "özel isim geçmemektedir",
+        )
+    ):
+        return query
 
-    body = re.split(r"\(Kaynak:", last_a or "", maxsplit=1)[0].strip()
     names = citation_names(last_q) + citation_names(last_a) + citation_names(query)
     extra: List[str] = []
     country = any(k in normalize_text(query) for k in ("ulke", "avrupa", "seyahat", "inceleme", "ingiltere", "fransa"))
     city = any(k in normalize_text(query) for k in ("sehir", "eyalet"))
     for name in names:
         extra.append(name)
-        related = RELATED_TERMS.get(name, [])
+        related = RELATED_TERMS.get(normalize_text(name), [])
         if country:
             related = [t for t in related if t not in {"hartford", "connecticut"}]
         extra.extend(related)
@@ -230,9 +273,8 @@ def expand_query(
             seen.add(key)
             unique.append(item)
 
+    # Yalnızca soru + önceki soru + isimler; önceki cevap gövdesini ekleme (yanlış bağlama).
     parts = [query, last_q]
     if unique:
         parts.append(" ".join(unique[:8]))
-    if body:
-        parts.append(body[:180])
     return " ".join(p for p in parts if p).strip()
