@@ -2,17 +2,28 @@
 <html lang="tr">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Local RAG</title>
-  <link rel="stylesheet" href="/static/styles.css?v=12" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Verifiable RAG</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/styles.css?v=15" />
 </head>
 <body>
   <div class="app">
-    <aside class="rail">
+    <button type="button" id="railToggle" class="rail-toggle" aria-expanded="false" aria-controls="rail">
+      Belgeler
+    </button>
+    <div id="railBackdrop" class="rail-backdrop" hidden></div>
+
+    <aside class="rail" id="rail">
       <div class="brand">
-        <strong>Local RAG</strong>
+        <strong>Verifiable RAG</strong>
         <span>Muhammed Beşir Kesen</span>
-        <span id="runtimeStatus" class="runtime">Motor yükleniyor…</span>
+        <div id="runtimeStatus" class="status-badge is-loading" role="status">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span class="status-text">Motor yükleniyor…</span>
+        </div>
       </div>
 
       <label class="upload">
@@ -25,16 +36,24 @@
       </select>
       <ul id="fileList" class="files"></ul>
       <p id="emptyFiles" class="muted">Henüz belge yok.</p>
+
+      <button type="button" id="clearChat" class="clear-chat">Sohbeti Temizle</button>
     </aside>
 
     <main class="chat">
       <div id="thread" class="thread"></div>
       <form id="composer" class="composer">
-        <input id="query" type="text" placeholder="Belgen hakkında sor…" autocomplete="off" />
+        <textarea
+          id="query"
+          rows="1"
+          placeholder="Belgen hakkında sor… (Enter gönder, Shift+Enter satır)"
+          autocomplete="off"
+          enterkeyhint="send"
+        ></textarea>
         <button type="submit" id="sendBtn">Gönder</button>
       </form>
     </main>
   </div>
-  <script src="/static/app.js?v=12"></script>
+  <script src="/static/app.js?v=15"></script>
 </body>
 </html>
