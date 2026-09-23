@@ -27,10 +27,14 @@ def _numbers(text: str) -> set:
     return {n for n in out if n}
 
 
-def verify_citations(response_text: str, retrieved_chunks: List[Dict[str, Any]]) -> Dict[str, Any]:
+def verify_citations(
+    response_text: str,
+    retrieved_chunks: List[Dict[str, Any]],
+    query_text: str = "",
+) -> Dict[str, Any]:
     """
-    Yanıtın getirilen kaynak parçalarla örtüşmesini ölçer.
-    Türkçe çeviride sayılar ve özel isimler korunur; red yanıtları ayrı işaretlenir.
+    Yanıtın kaynaklarla örtüşmesini ölçer.
+    Türkçe cevap / İngilizce kaynakta sayı ve özel isim eşleşmesini güçlendirir.
     """
     empty = {
         "verified_citations": [],
@@ -45,7 +49,11 @@ def verify_citations(response_text: str, retrieved_chunks: List[Dict[str, Any]])
     body = re.split(r"\(Kaynak:", response_text or "", maxsplit=1)[0]
     blob = normalize_text(body)
     if any(hint in blob or hint in (response_text or "").lower() for hint in REJECT_HINTS):
-        status = "Çapraz belge reddi" if "iki ayri belgedeki" in blob or "iki ayrı belgedeki" in (response_text or "").lower() else "Belgede yok"
+        status = (
+            "Çapraz belge reddi"
+            if "iki ayri belgedeki" in blob or "iki ayrı belgedeki" in (response_text or "").lower()
+            else "Belgede yok"
+        )
         return {
             "verified_citations": [],
             "details": [],
@@ -55,13 +63,18 @@ def verify_citations(response_text: str, retrieved_chunks: List[Dict[str, Any]])
         }
 
     sentences = [s.strip() for s in re.split(r"[.!?]+", body) if len(s.strip()) > 10]
-    has_relevant_chunk = any(chunk.get("is_relevant", True) for chunk in retrieved_chunks)
-    if not has_relevant_chunk:
-        return {
-            **empty,
-            "verification_status": "Bilgi Belgelerde Bulunamadı",
-            "kind": "reject",
-        }
+    query_names = {
+        normalize_text(n.replace("-", " "))
+        for n in re.findall(
+            r"[A-ZÇĞİÖŞÜ][A-Za-zÇĞİÖŞÜçğıöşü]{2,}(?:\s+[A-ZÇĞİÖŞÜ][A-Za-zÇĞİÖŞÜçğıöşü]{2,})*",
+            query_text or "",
+        )
+    }
+    query_names |= {
+        t
+        for t in normalize_text(query_text or "").split()
+        if len(t) >= 5
+    }
 
     matched_sources = set()
     verified_details = []
@@ -78,20 +91,32 @@ def verify_citations(response_text: str, retrieved_chunks: List[Dict[str, Any]])
         for chunk in retrieved_chunks:
             chunk_text = chunk.get("content") or ""
             chunk_tokens = _tokens(chunk_text)
-            if not chunk_tokens:
+            if not chunk_tokens and not _numbers(chunk_text):
                 continue
             common = sent_tokens.intersection(chunk_tokens)
             overlap_ratio = len(common) / len(sent_tokens) if sent_tokens else 0.0
             chunk_nums = _numbers(chunk_text)
             if sent_nums and sent_nums.intersection(chunk_nums):
                 overlap_ratio = max(overlap_ratio, 0.55)
+            # Özel isim / odak kelime ortaklığı (TR↔EN çeviride kelime Jaccard düşük kalır)
+            name_hits = sum(
+                1
+                for name in query_names
+                if name
+                and len(name) >= 4
+                and (name in normalize_text(sentence) or name in normalize_text(chunk_text))
+                and name in normalize_text(chunk_text)
+                and name in normalize_text(sentence)
+            )
+            if name_hits:
+                overlap_ratio = max(overlap_ratio, min(0.75, 0.4 + 0.15 * name_hits))
             if normalize_text(sentence) in normalize_text(chunk_text):
                 overlap_ratio = max(overlap_ratio, 0.8)
             if overlap_ratio > best_overlap_ratio:
                 best_overlap_ratio = overlap_ratio
                 best_match_chunk = chunk
 
-        if best_overlap_ratio >= 0.25 and best_match_chunk and best_match_chunk.get("is_relevant", True):
+        if best_overlap_ratio >= 0.22 and best_match_chunk:
             total_matches += 1
             source_info = f"{best_match_chunk['source_file']} (Sayfa {best_match_chunk['page_number']})"
             matched_sources.add(source_info)
