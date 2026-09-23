@@ -1105,6 +1105,18 @@ class LLMEngine:
             if not is_junk_chunk(c.get("content") or "", c.get("page_number") or 0)
         ]
         chunks = usable or chunks
+        from src.retriever import content_focus_tokens
+
+        focus = content_focus_tokens(query)
+        if focus:
+            focused = []
+            for chunk in chunks:
+                blob = normalize_text(chunk.get("content") or "")
+                compact = blob.replace(" ", "")
+                if any(t in blob or t.replace(" ", "") in compact for t in focus):
+                    focused.append(chunk)
+            if focused:
+                chunks = focused
         num = action_number(query)
         if num:
             pat = re.compile(rf"eylem\s*{num}\b", re.I)
@@ -1137,14 +1149,18 @@ class LLMEngine:
                 if any(name in blob or name.replace(" ", "") in compact for name in names):
                     named_direct.append(chunk)
             if named_direct:
-                chunks = named_direct
-            elif named:
-                chunks = named
-        return max(
-            chunks,
-            key=lambda c: entity_boost(query, c.get("content") or "")
-            + lexical_score(query, c.get("content") or ""),
-        )
+                return named_direct[0]
+            if named:
+                return named[0]
+        # Lexical en iyi chunk
+        best = chunks[0]
+        best_score = -1.0
+        for chunk in chunks:
+            score = lexical_score(query, chunk.get("content") or "")
+            if score > best_score:
+                best_score = score
+                best = chunk
+        return best
 
     def _numbered_action_answer(self, query: str, chunks: List[Dict[str, Any]]) -> str:
         num = action_number(query)
@@ -1371,6 +1387,14 @@ class LLMEngine:
         words = [w for w in re.findall(r"\w+", low) if len(w) > 1]
         if len(words) < 2:
             return False
+        # Odak kelime soruda varsa cevapta veya en azından kaynak cümlede iz bırakmalı
+        from src.retriever import content_focus_tokens
+
+        focus = content_focus_tokens(query)
+        if focus:
+            blob = normalize_text(text)
+            if not any(t in blob for t in focus):
+                return False
         return True
 
     @staticmethod
