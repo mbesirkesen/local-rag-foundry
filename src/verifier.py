@@ -1,71 +1,96 @@
 import re
 from typing import List, Dict, Any
 
+from src.retriever import normalize_text
+
+
+REJECT_HINTS = (
+    "yeterli bilgi bulunmamaktadır",
+    "geçmemektedir",
+    "gecmemektedir",
+    "birlikte geçmemektedir",
+    "birlikte gecmemektedir",
+)
+
+
+def _tokens(text: str) -> set:
+    return {t for t in normalize_text(text or "").split() if len(t) > 1}
+
+
+def _numbers(text: str) -> set:
+    compact = (text or "").replace(" ", "")
+    found = re.findall(r"\d+(?:[.,]\d+)?", compact)
+    out = set()
+    for item in found:
+        out.add(item.replace(",", "."))
+        out.add(re.sub(r"[^\d]", "", item))
+    return {n for n in out if n}
+
+
 def verify_citations(response_text: str, retrieved_chunks: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
-    Modelin ürettiği yanıtın, veritabanından çekilen kaynak metinlerle ne kadar örtüştüğünü doğrular.
-    
-    Args:
-        response_text: LLM tarafından üretilen yanıt metni
-        retrieved_chunks: Veritabanından çekilen kaynak parçalar listesi
-        
-    Returns:
-        Dict: {
-            "verified_citations": ["staj_rehberi.pdf (Sayfa 1)", ...],
-            "details": [{"sentence": "...", "source": "...", "confidence": 85.0}],
-            "confidence_score": 85.0,
-            "verification_status": "Yüksek Doğruluk"
-        }
+    Yanıtın getirilen kaynak parçalarla örtüşmesini ölçer.
+    Türkçe çeviride sayılar ve özel isimler korunur; red yanıtları ayrı işaretlenir.
     """
+    empty = {
+        "verified_citations": [],
+        "details": [],
+        "confidence_score": 0.0,
+        "verification_status": "Kaynak Bulunamadı / Yetersiz",
+        "kind": "empty",
+    }
     if not retrieved_chunks or not response_text:
+        return empty
+
+    body = re.split(r"\(Kaynak:", response_text or "", maxsplit=1)[0]
+    blob = normalize_text(body)
+    if any(hint in blob or hint in (response_text or "").lower() for hint in REJECT_HINTS):
+        status = "Çapraz belge reddi" if "iki ayri belgedeki" in blob or "iki ayrı belgedeki" in (response_text or "").lower() else "Belgede yok"
         return {
             "verified_citations": [],
             "details": [],
             "confidence_score": 0.0,
-            "verification_status": "Kaynak Bulunamadı / Yetersiz"
+            "verification_status": status,
+            "kind": "reject",
         }
-        
-    # Yanıtı noktalama işaretlerine göre cümlelere böl (en az 10 karakterlik anlamlı cümleler)
-    sentences = [s.strip() for s in re.split(r'[.!?]+', response_text) if len(s.strip()) > 10]
-    
+
+    sentences = [s.strip() for s in re.split(r"[.!?]+", body) if len(s.strip()) > 10]
+    has_relevant_chunk = any(chunk.get("is_relevant", True) for chunk in retrieved_chunks)
+    if not has_relevant_chunk:
+        return {
+            **empty,
+            "verification_status": "Bilgi Belgelerde Bulunamadı",
+            "kind": "reject",
+        }
+
     matched_sources = set()
     verified_details = []
     total_matches = 0
-    
-    # Eğer getirilen parçalar alakasız olarak işaretlenmişse (Relevance Check)
-    has_relevant_chunk = any(chunk.get("is_relevant", True) for chunk in retrieved_chunks)
-    if not has_relevant_chunk or "yeterli bilgi bulunmamaktadır" in response_text.lower():
-        return {
-            "verified_citations": [],
-            "details": [],
-            "confidence_score": 0.0,
-            "verification_status": "Bilgi Belgelerde Bulunamadı"
-        }
-        
+
     for sentence in sentences:
-        words = set(sentence.lower().split())
+        sent_tokens = _tokens(sentence)
+        sent_nums = _numbers(sentence)
+        if not sent_tokens and not sent_nums:
+            continue
         best_match_chunk = None
         best_overlap_ratio = 0.0
-        
+
         for chunk in retrieved_chunks:
-            chunk_content_lower = chunk["content"].lower()
-            chunk_words = set(chunk_content_lower.split())
-            if not chunk_words:
+            chunk_text = chunk.get("content") or ""
+            chunk_tokens = _tokens(chunk_text)
+            if not chunk_tokens:
                 continue
-                
-            # 1. Kelime kesişim oranı (Jaccard)
-            common_words = words.intersection(chunk_words)
-            overlap_ratio = len(common_words) / len(words) if words else 0.0
-            
-            # 2. Alt string eşleşmesi
-            if sentence.lower() in chunk_content_lower:
+            common = sent_tokens.intersection(chunk_tokens)
+            overlap_ratio = len(common) / len(sent_tokens) if sent_tokens else 0.0
+            chunk_nums = _numbers(chunk_text)
+            if sent_nums and sent_nums.intersection(chunk_nums):
+                overlap_ratio = max(overlap_ratio, 0.55)
+            if normalize_text(sentence) in normalize_text(chunk_text):
                 overlap_ratio = max(overlap_ratio, 0.8)
-                
             if overlap_ratio > best_overlap_ratio:
                 best_overlap_ratio = overlap_ratio
                 best_match_chunk = chunk
-                
-        # Eğer cümle kelimelerinin en az %25'i kaynak metinde varsa ve parça alakalıysa doğrula
+
         if best_overlap_ratio >= 0.25 and best_match_chunk and best_match_chunk.get("is_relevant", True):
             total_matches += 1
             source_info = f"{best_match_chunk['source_file']} (Sayfa {best_match_chunk['page_number']})"
@@ -73,17 +98,22 @@ def verify_citations(response_text: str, retrieved_chunks: List[Dict[str, Any]])
             verified_details.append({
                 "sentence": sentence,
                 "source": source_info,
-                "confidence": round(best_overlap_ratio * 100, 1)
+                "confidence": round(best_overlap_ratio * 100, 1),
             })
-            
-    # Toplam Doğruluk Skoru Hesaplama
-    confidence_score = round((total_matches / len(sentences)) * 100, 1) if sentences else 0.0
-    
-    status = "Yüksek Doğruluk" if confidence_score >= 60.0 else "Düşük / Şüpheli Doğruluk"
-    
+
+    usable = [s for s in sentences if _tokens(s) or _numbers(s)]
+    confidence_score = round((total_matches / len(usable)) * 100, 1) if usable else 0.0
+    if confidence_score >= 60.0:
+        status = "Yüksek Doğruluk"
+        kind = "ok"
+    else:
+        status = "Düşük / Şüpheli Doğruluk"
+        kind = "low"
+
     return {
         "verified_citations": sorted(list(matched_sources)),
         "details": verified_details,
         "confidence_score": confidence_score,
-        "verification_status": status
+        "verification_status": status,
+        "kind": kind,
     }
