@@ -24,11 +24,12 @@ Arayüz Türkçedir. Ana uygulama FastAPI + `static/` web arayüzüdür (`http:/
 - **Foundry Local (opsiyonel):** `Phi-4-mini-instruct-generic-cpu` ile çevrimdışı üretim. SDK yoksa hash-384 gömme ve çıkarımsal (extractive) yanıt devreye girer.
 - **PDF/TXT ayrıştırma:** `pdfplumber` ile metin + tablo; kelime hizalı Markdown tablolar sayısal satırları korur. Yedek: `pypdf`.
 - **Anlamsal parçalama:** Cümle / konu sınırına göre chunk; tablolar bütün tutulur.
-- **Hibrit arama:** BM25 + sözcük eşlemesi + konu/varlık puanı + yeniden sıralama. Belge filtresi (tek dosya veya tüm belgeler).
+- **Hibrit arama:** BM25 + kayıtlı gömme (kosinüs) + sözcük eşlemesi + rerank. Belge filtresi (tek dosya veya tüm belgeler).
 - **Kısa bellek:** Takip sorularını önceki turla genişletir; yeni bir özel isim gelince önceki reddi yapıştırmaz.
 - **Korumalar:** Çapraz belge (mixed-domain) reddi, belgede geçmeyen proje/özel isim, sayısal ve isimli olgular için çıkarıcı yanıtlar, yanıtın Türkçe tutulması.
-- **Doğrulama:** Cümle düzeyinde Jaccard örtüşmesi (`src/verifier.py`).
-- **Kaynak bağlantısı:** Arayüzde kaynak satırı ilgili PDF sayfasını açar.
+- **Doğrulama:** Cümle düzeyinde örtüşme skoru yanıtın altında görünür (`src/verifier.py`).
+- **Belge silme:** Listeden dosyayı indeksten ve `data/` klasöründen kaldırır.
+- **Kaynak bağlantısı:** Kaynak satırı ilgili PDF sayfasını açar.
 
 ---
 
@@ -50,7 +51,7 @@ Arayüz Türkçedir. Ana uygulama FastAPI + `static/` web arayüzüdür (`http:/
 [SQLite]       data/vector_store.db
     │
     ▼
-[Getirici]     BM25 + sözcük + rerank + belge yönlendirme
+[Getirici]     BM25 + gömme (kosinüs) + sözcük + rerank
     │
     ▼
 [Yanıt]        korumalar → extractive / Foundry Phi-4 (Türkçe)
@@ -86,7 +87,8 @@ Tarayıcı: [http://127.0.0.1:8000](http://127.0.0.1:8000)
 
 1. Soldan PDF veya TXT yükleyin.
 2. İsterseniz belge seçin (`Tüm belgeler` veya tek dosya).
-3. Soruyu yazıp gönderin.
+3. Listeden **Sil** ile belgeyi indeksten ve `data/` klasöründen kaldırın.
+4. Soruyu yazıp gönderin.
 
 Yüklenen dosyalar `data/` altında kalır ve git’e **eklenmez**.
 
@@ -100,7 +102,10 @@ python tests/test_ingest.py
 python tests/test_retriever.py
 python tests/test_llm.py
 python tests/test_verifier.py
+python tests/test_eval_guardrails.py
 ```
+
+`test_eval_guardrails.py` koruma testlerini her zaman çalıştırır; `data/` içinde belgeler varsa Minnesota / Juniper / Gallaudet sorularını da kontrol eder.
 
 ---
 
@@ -109,7 +114,6 @@ python tests/test_verifier.py
 ```
 verifiable-local-rag/
 ├── api.py              FastAPI: yükleme, sohbet, belgeler
-├── app.py              Eski Streamlit arayüzü (opsiyonel)
 ├── static/             Türkçe web arayüzü
 ├── src/
 │   ├── ingest.py       PDF/TXT, tablo, anlamsal chunk

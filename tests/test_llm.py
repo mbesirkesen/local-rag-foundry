@@ -35,7 +35,7 @@ def run_tests():
 
     # 3. Boş Bağlam Testi (No Context)
     empty_answer = engine.generate_answer("Soru", [])
-    assert "bulunamadı" in empty_answer.lower(), "Boş bağlamda bulunamadı uyarısı verilmeli!"
+    assert "bulunmamaktadır" in empty_answer.lower(), "Boş bağlamda bulunmamaktadır uyarısı verilmeli!"
     print("[OK] Empty Context Handling Test Passed")
 
     print("--- ALL LLM ENGINE TESTS PASSED SUCCESSFULLY! ---")
