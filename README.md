@@ -1,8 +1,10 @@
-# Local RAG (Foundry)
+# Verifiable Local RAG (Foundry)
 
-Yerelde çalışan, sayfa kaynaklı bir belge soru-cevap sistemi. PDF/TXT yükler, parçalara ayırır, soruya göre ilgili sayfayı bulur ve yanıtı Türkçe verir. Harici API zorunlu değildir: Microsoft Foundry Local varsa Phi-4 kullanılır, yoksa hash tabanlı yedek motorla arama yine çalışır.
+Yerelde çalışan, **doğrulanabilir** belge soru-cevap sistemi. PDF/TXT yükler, ilgili sayfayı bulur, yanıtı Türkçe verir ve kaynak gösterir — belgede yoksa uydurmaz.
 
-**Yazar:** Muhammed Beşir Kesen
+Harici API zorunlu değildir: Microsoft Foundry Local varsa Phi-4 kullanılır, yoksa hash tabanlı yedek motorla arama yine çalışır.
+
+**Yazar:** Muhammed Beşir Kesen · **Repo:** [github.com/mbesirkesen/local-rag-foundry](https://github.com/mbesirkesen/local-rag-foundry)
 
 ---
 
@@ -12,8 +14,9 @@ Bir veya birden fazla belgeyi tarayıcıdan yükleyip doğal dilde soru sorarsı
 
 - yanıtı belgedeki ilgili sayfaya dayandırır
 - `(Kaynak: dosya.pdf, Sayfa N)` satırı ekler
-- belgede olmayan özel isim / hayali proje uydurmaz
+- belgede olmayan özel isim / hayali proje uydurmaz (**cite or refuse**)
 - iki ayrı belgedeki konuları zorla birleştiren tuzak soruları reddeder
+- sadakat + soru ilgisiyle doğrulama rozeti gösterir
 
 Arayüz Türkçedir. Ana uygulama FastAPI + `static/` web arayüzüdür (`http://127.0.0.1:8000`).
 
@@ -57,7 +60,7 @@ Arayüz Türkçedir. Ana uygulama FastAPI + `static/` web arayüzüdür (`http:/
 [Yanıt]        korumalar → extractive / Foundry Phi-4 (Türkçe)
     │
     ▼
-[Doğrulayıcı]  cümle-kaynak örtüşmesi
+[Doğrulayıcı]  cümle-kaynak doğrulama + rozet
 ```
 
 ---
@@ -66,9 +69,8 @@ Arayüz Türkçedir. Ana uygulama FastAPI + `static/` web arayüzüdür (`http:/
 
 Python 3.11+ gerekir.
 
-
 ```powershell
-cd verifiable-local-rag
+cd local-rag-foundry
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
@@ -104,6 +106,7 @@ python tests/test_retriever.py
 python tests/test_llm.py
 python tests/test_verifier.py
 python tests/test_eval_guardrails.py
+python tests/test_guardrail_regression.py
 ```
 
 `test_eval_guardrails.py` koruma testlerini her zaman çalıştırır; `data/` içinde belgeler varsa Minnesota / Juniper / Gallaudet sorularını da kontrol eder.
@@ -113,17 +116,18 @@ python tests/test_eval_guardrails.py
 ## Proje yapısı
 
 ```
-verifiable-local-rag/
+local-rag-foundry/
 ├── api.py              FastAPI: yükleme, sohbet, belgeler
 ├── static/             Türkçe web arayüzü
 ├── src/
 │   ├── ingest.py       PDF/TXT, tablo, anlamsal chunk
 │   ├── database.py     SQLite vektör deposu
-│   ├── retriever.py    Hibrit arama, konu puanı, koruma kalıpları
+│   ├── retriever.py    Hibrit arama, odak, rerank
 │   ├── memory.py       Takip sorusu, belge yönlendirme
-│   ├── llm.py          Foundry / yedek motor, extractive yanıt, korumalar
+│   ├── guardrails.py   Preflight / bağlam / rozet
+│   ├── llm.py          Foundry / yedek motor, extractive yanıt
 │   └── verifier.py     Cümle-kaynak doğrulama
-├── tests/              Birim testleri
+├── tests/              Birim + regresyon testleri
 ├── data/               Yerel belgeler ve SQLite (gitignore)
 ├── requirements.txt
 └── LICENSE             MIT
