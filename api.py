@@ -14,7 +14,6 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from src.database import (
     chunk_count,
-    clear_db,
     delete_source,
     init_db,
     list_documents,
@@ -22,7 +21,7 @@ from src.database import (
     save_chunks,
 )
 from src.ingest import process_document
-from src.llm import LLMEngine
+from src.llm import HAS_FOUNDRY_LOCAL, LLMEngine
 from src.memory import expand_query, infer_source, is_compare_query, is_presence_query, looks_like_followup, mentioned_source
 from src.retriever import retrieve_smart_chunks
 from src.verifier import verify_citations
@@ -67,6 +66,7 @@ def public_chunk(chunk: Dict[str, Any]) -> Dict[str, Any]:
         "is_relevant": chunk.get("is_relevant", True),
         "content": content,
         "snippet": content[:280],
+        "vector_score": chunk.get("vector_score"),
     }
 
 
@@ -125,12 +125,6 @@ class ChatRequest(BaseModel):
     temperature: float = Field(default=0.1, ge=0, le=1)
 
 
-class SearchRequest(BaseModel):
-    query: str
-    source: Optional[str] = None
-    top_k: int = Field(default=5, ge=1, le=10)
-
-
 @app.get("/")
 def index():
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
@@ -140,22 +134,45 @@ def index():
 def status():
     engine = get_engine()
     docs = knowledge_rows()
+    foundry = bool(getattr(engine, "is_foundry_active", False))
     return {
-        "foundry": bool(getattr(engine, "is_foundry_active", False)),
-        "sdk_available": bool(getattr(engine, "is_foundry_active", False)),
-        "model_id": engine.model_id,
-        "model_name": short_model_name(engine.model_id),
+        "foundry": foundry,
+        "sdk_available": bool(HAS_FOUNDRY_LOCAL),
+        "model_id": engine.model_id if foundry else "fallback-hash-384",
+        "model_name": short_model_name(engine.model_id) if foundry else "Hash-384",
         "vector_db": "SQLite",
         "documents_indexed": len(docs),
         "chunks_indexed": chunk_count(),
         "files": [row["filename"] for row in docs],
-        "runtime": "Foundry Local SDK" if engine.is_foundry_active else "Fallback Hash Engine",
+        "runtime": "Foundry Local" if foundry else "Yedek motor",
     }
 
 
 @app.get("/api/documents")
 def documents():
     return {"documents": knowledge_rows()}
+
+
+@app.delete("/api/documents/{filename:path}")
+def delete_document(filename: str):
+    name = os.path.basename(unquote(filename or ""))
+    if not name or name in {".", "..", ".gitkeep"}:
+        raise HTTPException(status_code=400, detail="Geçersiz dosya adı.")
+    path = os.path.abspath(os.path.join(DATA_DIR, name))
+    root = os.path.abspath(DATA_DIR)
+    try:
+        if os.path.commonpath([root, path]) != root:
+            raise HTTPException(status_code=400, detail="Geçersiz yol.")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Geçersiz yol.")
+    indexed = name in list_source_files()
+    exists = os.path.isfile(path)
+    if not indexed and not exists:
+        raise HTTPException(status_code=404, detail="Belge bulunamadı.")
+    delete_source(name)
+    if exists:
+        os.remove(path)
+    return {"deleted": name, "documents": knowledge_rows()}
 
 
 @app.get("/api/files/{filename:path}")
@@ -170,36 +187,6 @@ def open_file(filename: str):
             "Content-Disposition": f'inline; filename="{os.path.basename(path)}"'
         },
     )
-
-
-@app.get("/api/models")
-def models():
-    engine = get_engine()
-    active = short_model_name(engine.model_id)
-    catalog = [
-        {
-            "id": engine.model_id,
-            "name": active,
-            "provider": "Foundry Local",
-            "status": "loaded" if engine.is_foundry_active else "fallback",
-            "active": True,
-        },
-        {
-            "id": "phi-4-mini-instruct",
-            "name": "Phi-4-mini",
-            "provider": "Foundry catalog",
-            "status": "available",
-            "active": False,
-        },
-        {
-            "id": "fallback-hash-384",
-            "name": "Hash-384",
-            "provider": "Deterministic fallback",
-            "status": "ready",
-            "active": not engine.is_foundry_active,
-        },
-    ]
-    return {"active": engine.model_id, "foundry": engine.is_foundry_active, "models": catalog}
 
 
 @app.post("/api/upload")
@@ -222,23 +209,36 @@ async def upload(files: List[UploadFile] = File(...)):
             handle.write(content)
 
         chunks = process_document(path)
+        if not chunks:
+            delete_source(name)
+            if os.path.isfile(path):
+                os.remove(path)
+            raise HTTPException(
+                status_code=400,
+                detail=f"Belgeden metin çıkarılamadı: {name}",
+            )
+
         for chunk in chunks:
             chunk["embedding"] = engine.generate_embedding(chunk["content"])
-        if chunks:
-            delete_source(name)
-            save_chunks(chunks)
+        delete_source(name)
+        save_chunks(chunks)
         saved.append({"name": name, "chunks": len(chunks)})
 
     return {"uploaded": saved, "documents": knowledge_rows()}
 
 
 def retrieve_for(engine: LLMEngine, query: str, source: Optional[str], top_k: int, mode: str):
+    embed_engine = "fallback" if mode == "fallback" else "auto"
+    try:
+        embedding = engine.generate_embedding(query, engine=embed_engine)
+    except Exception:
+        embedding = []
     return retrieve_smart_chunks(
         query_text=query,
-        query_embedding=[],
+        query_embedding=embedding or [],
         top_k=top_k,
         filter_source=source,
-        use_vector=False,
+        use_vector=bool(embedding),
     )
 
 
@@ -258,11 +258,13 @@ def chat(payload: ChatRequest):
     source = payload.source or None
     if source in {None, "", "Tüm Belgeler"}:
         source = infer_source(query, files, history)
+    # Upload ile aynı gömme uzayı: Foundry açıksa Foundry, değilse hash-384.
+    embed_mode = "auto"
     if is_compare_query(query):
         merged = []
         seen = set()
         for fname in files:
-            for chunk in retrieve_for(engine, search_query, fname, min(3, payload.top_k), "fallback"):
+            for chunk in retrieve_for(engine, search_query, fname, min(3, payload.top_k), embed_mode):
                 cid = chunk.get("id")
                 if cid in seen:
                     continue
@@ -271,7 +273,7 @@ def chat(payload: ChatRequest):
         merged.sort(key=lambda item: float(item.get("similarity_score") or 0), reverse=True)
         answer_chunks = merged[: max(payload.top_k * 2, 6)]
     else:
-        answer_chunks = retrieve_for(engine, search_query, source, payload.top_k, "fallback")
+        answer_chunks = retrieve_for(engine, search_query, source, payload.top_k, embed_mode)
     engine_used = "foundry" if engine.is_foundry_active else "fallback"
     usable = [c for c in answer_chunks if c.get("is_relevant") or (c.get("similarity_score") or 0) > 0.2]
     if not usable:
@@ -294,7 +296,7 @@ def chat(payload: ChatRequest):
         .replace("|||", "")
         .replace("||", "")
     )
-    verification = verify_citations(response_text, usable)
+    verification = verify_citations(cleaned, usable)
     not_found = (not usable) or any(
         k in cleaned.lower() for k in ("bulunmamaktadır", "geçmemektedir")
     )
@@ -308,31 +310,3 @@ def chat(payload: ChatRequest):
             "fallback": [public_chunk(c) for c in usable],
         },
     }
-
-
-@app.post("/api/search")
-def search(payload: SearchRequest):
-    query = (payload.query or "").strip()
-    if not query:
-        raise HTTPException(status_code=400, detail="Arama boş.")
-
-    engine = get_engine()
-    source = payload.source or None
-    fallback_chunks = retrieve_for(engine, query, source, payload.top_k, "fallback")
-    foundry_chunks = (
-        retrieve_for(engine, query, source, payload.top_k, "foundry")
-        if engine.is_foundry_active
-        else []
-    )
-    return {
-        "chunks": {
-            "foundry": [public_chunk(c) for c in foundry_chunks],
-            "fallback": [public_chunk(c) for c in fallback_chunks],
-        }
-    }
-
-
-@app.post("/api/reset")
-def reset():
-    clear_db()
-    return {"ok": True, "documents": []}

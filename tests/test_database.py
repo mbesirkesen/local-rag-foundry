@@ -5,7 +5,7 @@ import math
 # Proje dizinini sys.path'e ekle
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from src.database import init_db, save_chunks, search_similar_chunks, clear_db, cosine_similarity
+from src.database import init_db, save_chunks, search_similar_chunks, clear_db, cosine_similarity, delete_source, list_documents
 
 TEST_DB = os.path.join(os.path.dirname(__file__), "test_vector.db")
 
@@ -53,6 +53,10 @@ def run_tests():
     assert results[0]["content"] == "Yapay zeka ve RAG mimarisi"
     assert math.isclose(results[0]["similarity_score"], 1.0)
     print("[OK] SQLite JSON Vector Storage and Retrieval Test Passed")
+
+    delete_source("doc1.txt", db_path=TEST_DB)
+    assert list_documents(TEST_DB) == []
+    print("[OK] Delete Source Test Passed")
 
     # Temizlik
     if os.path.exists(TEST_DB):
