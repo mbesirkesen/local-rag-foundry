@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from datetime import datetime
 import os
+import re
 import sys
 from typing import Any, Dict, List, Optional
 
@@ -21,14 +22,25 @@ from src.database import (
     save_chunks,
 )
 from src.ingest import process_document
-from src.llm import HAS_FOUNDRY_LOCAL, LLMEngine
-from src.memory import expand_query, infer_source, is_compare_query, is_presence_query, looks_like_followup, mentioned_source
+from src.llm import HAS_FOUNDRY_LOCAL, LLMEngine, NOT_FOUND
+from src.guardrails import finalize_response, preflight_query, select_context_chunks
+from src.memory import (
+    expand_query,
+    infer_source,
+    is_compare_query,
+    is_presence_query,
+    looks_like_followup,
+    mentioned_source,
+)
 from src.retriever import retrieve_smart_chunks
 from src.verifier import verify_citations
 
 ROOT = os.path.dirname(__file__)
 DATA_DIR = os.path.join(ROOT, "data")
 STATIC_DIR = os.path.join(ROOT, "static")
+
+# Alakasız / zayıf chunk'larla cevap üretme eşiği (similarity_score 0–1+ ölçeğinde).
+MIN_ANSWER_SCORE = 0.35
 
 _engine: Optional[LLMEngine] = None
 
@@ -249,6 +261,11 @@ def chat(payload: ChatRequest):
         raise HTTPException(status_code=400, detail="Soru boş.")
 
     engine = get_engine()
+    engine_used = "foundry" if engine.is_foundry_active else "fallback"
+    early = preflight_query(query, engine_used)
+    if early:
+        return early
+
     history = [
         {"role": turn.role, "content": turn.content}
         for turn in (payload.history or [])
@@ -258,7 +275,6 @@ def chat(payload: ChatRequest):
     source = payload.source or None
     if source in {None, "", "Tüm Belgeler"}:
         source = infer_source(query, files, history)
-    # Upload ile aynı gömme uzayı: Foundry açıksa Foundry, değilse hash-384.
     embed_mode = "auto"
     if is_compare_query(query):
         merged = []
@@ -274,10 +290,17 @@ def chat(payload: ChatRequest):
         answer_chunks = merged[: max(payload.top_k * 2, 6)]
     else:
         answer_chunks = retrieve_for(engine, search_query, source, payload.top_k, embed_mode)
-    engine_used = "foundry" if engine.is_foundry_active else "fallback"
-    usable = [c for c in answer_chunks if c.get("is_relevant") or (c.get("similarity_score") or 0) > 0.2]
+
+    usable = select_context_chunks(query, answer_chunks, min_score=MIN_ANSWER_SCORE)
     if not usable:
-        usable = answer_chunks[: payload.top_k]
+        return finalize_response(
+            query=query,
+            cleaned=NOT_FOUND,
+            usable=[],
+            verification={"kind": "reject", "verification_status": "Bilgi Belgelerde Bulunamadı", "confidence_score": 0},
+            engine_used=engine_used,
+            public_chunk_fn=public_chunk,
+        )
 
     prompt_query = query if (
         is_presence_query(query)
@@ -296,17 +319,12 @@ def chat(payload: ChatRequest):
         .replace("|||", "")
         .replace("||", "")
     )
-    verification = verify_citations(cleaned, usable)
-    not_found = (not usable) or any(
-        k in cleaned.lower() for k in ("bulunmamaktadır", "geçmemektedir")
+    verification = verify_citations(cleaned, usable, query_text=query)
+    return finalize_response(
+        query=query,
+        cleaned=cleaned,
+        usable=usable,
+        verification=verification,
+        engine_used=engine_used,
+        public_chunk_fn=public_chunk,
     )
-    return {
-        "answer": cleaned,
-        "not_found": not_found,
-        "verification": verification,
-        "engine_used": engine_used,
-        "chunks": {
-            "foundry": [],
-            "fallback": [public_chunk(c) for c in usable],
-        },
-    }
